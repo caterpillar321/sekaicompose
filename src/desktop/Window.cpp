@@ -8,6 +8,7 @@
 #include <string_view>
 #include "Window.hpp"
 #include "../Compositor.hpp"
+#include "../managers/KeybindManager.hpp" // SEKAI_MINIMIZE
 #include "../render/decorations/CHyprDropShadowDecoration.hpp"
 #include "../render/decorations/CHyprGroupBarDecoration.hpp"
 #include "../render/decorations/CHyprBorderDecoration.hpp"
@@ -1443,6 +1444,14 @@ bool sekaiTakeInitialMaximize(PHLWINDOW w) { // events/Windows.cpp mapWindow 이
 }
 
 void CWindow::onUpdateState() {
+    // SEKAI_MINIMIZE: 앱이 스스로 청한 최소화 (크롬·GTK 의 최소화 단추, X11 의 WM_CHANGE_STATE) — 원래는 받아 두기만 했다.
+    //   SekaiOS 의 최소화(숨김 작업 공간 special:min — 제목줄의 최소화 단추와 같은 명령, 이 창 주소로)
+    {
+        const std::optional<bool> MN = m_xdgSurface ? m_xdgSurface->m_toplevel->m_state.requestsMinimize : m_xwaylandSurface->m_state.requestsMinimize;
+        if (MN.value_or(false) && m_isMapped && m_workspace && !m_workspace->m_isSpecialWorkspace)
+            g_pKeybindManager->m_dispatchers["movetoworkspacesilent"](std::format("special:min,address:0x{:x}", (uintptr_t)this));
+    }
+
     std::optional<bool>      requestsFS = m_xdgSurface ? m_xdgSurface->m_toplevel->m_state.requestsFullscreen : m_xwaylandSurface->m_state.requestsFullscreen;
     std::optional<MONITORID> requestsID = m_xdgSurface ? m_xdgSurface->m_toplevel->m_state.requestsFullscreenMonitor : MONITOR_INVALID;
     std::optional<bool>      requestsMX = m_xdgSurface ? m_xdgSurface->m_toplevel->m_state.requestsMaximize : m_xwaylandSurface->m_state.requestsMaximize;

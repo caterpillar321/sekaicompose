@@ -425,9 +425,23 @@ void CXWM::handleClientMessage(xcb_client_message_event_t* e) {
 
                 if (prop == HYPRATOMS["_NET_WM_STATE_FULLSCREEN"])
                     XSURF->m_state.requestsFullscreen = updateState(action, XSURF->m_fullscreen);
+                // SEKAI_MINIMIZE: 최대화·숨기기(최소화) 요청도 받는다 (전엔 버렸다)
+                else if (prop == HYPRATOMS["_NET_WM_STATE_MAXIMIZED_VERT"] || prop == HYPRATOMS["_NET_WM_STATE_MAXIMIZED_HORZ"])
+                    XSURF->m_state.requestsMaximize = updateState(action, XSURF->m_maximized);
+                else if (prop == HYPRATOMS["_NET_WM_STATE_HIDDEN"] && updateState(action, XSURF->m_minimized))
+                    XSURF->m_state.requestsMinimize = true;
             }
 
             XSURF->m_events.stateChanged.emit();
+            XSURF->m_state.requestsMaximize.reset(); // SEKAI_MINIMIZE: 한 번 쓰고 지운다 (XDG 쪽과 같게)
+            XSURF->m_state.requestsMinimize.reset();
+        }
+    } else if (e->type == HYPRATOMS["WM_CHANGE_STATE"]) {
+        // SEKAI_MINIMIZE: ICCCM 의 최소화 요청 (XIconifyWindow — IconicState = 3)
+        if (e->format == 32 && e->data.data32[0] == 3) {
+            XSURF->m_state.requestsMinimize = true;
+            XSURF->m_events.stateChanged.emit();
+            XSURF->m_state.requestsMinimize.reset();
         }
     } else if (e->type == HYPRATOMS["_NET_ACTIVE_WINDOW"]) {
         XSURF->m_events.activate.emit();

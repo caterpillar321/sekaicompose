@@ -1,3 +1,4 @@
+#include <ranges> // SEKAI_MINIMIZE_FOCUS
 #include "../config/ConfigValue.hpp"
 #include "../devices/IKeyboard.hpp"
 #include "../managers/SeatManager.hpp"
@@ -1482,6 +1483,7 @@ SDispatchResult CKeybindManager::moveActiveToWorkspaceSilent(std::string args) {
 
     auto       pWorkspace = g_pCompositor->getWorkspaceByID(WORKSPACEID);
     const auto OLDMIDDLE  = PWINDOW->middle();
+    const auto SEKAIOLDWS = PWINDOW->m_workspace; // SEKAI_MINIMIZE_FOCUS
 
     if (pWorkspace) {
         g_pCompositor->moveWindowToWorkspaceSafe(PWINDOW, pWorkspace);
@@ -1491,7 +1493,20 @@ SDispatchResult CKeybindManager::moveActiveToWorkspaceSilent(std::string args) {
     }
 
     if (PWINDOW == g_pCompositor->m_lastWindow) {
-        if (const auto PATCOORDS = g_pCompositor->vectorToWindowUnified(OLDMIDDLE, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING, PWINDOW); PATCOORDS)
+        // SEKAI_MINIMIZE_FOCUS: 윈도우처럼 그 데스크톱의 맨 위 창에 초점을 넘긴다 (없으면 비운다). 원래 찾던 "옛 가운데 점의
+        //   창"은 떠 있는 창을 커서 자리로 찾아 대개 못 찾았고, 초점이 숨은 창에 남았다.
+        //   보이는 보통 데스크톱에서 옮길 때만 — 숨김 칸(최소화된 창들)에서 꺼낼 때 다른 최소화 창에 초점을 주면 숨김 칸이 열린다
+        if (SEKAIOLDWS && !SEKAIOLDWS->m_isSpecialWorkspace && SEKAIOLDWS->isVisible()) {
+            PHLWINDOW next;
+            for (auto const& w : g_pCompositor->m_windows | std::views::reverse) {
+                if (w != PWINDOW && w->m_isMapped && !w->isHidden() && w->m_workspace == SEKAIOLDWS && !w->isX11OverrideRedirect() &&
+                    !w->m_X11ShouldntFocus && !w->m_windowData.noFocus.valueOrDefault()) {
+                    next = w;
+                    break;
+                }
+            }
+            g_pCompositor->focusWindow(next);
+        } else if (const auto PATCOORDS = g_pCompositor->vectorToWindowUnified(OLDMIDDLE, RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING, PWINDOW); PATCOORDS)
             g_pCompositor->focusWindow(PATCOORDS);
         else
             g_pInputManager->refocus();

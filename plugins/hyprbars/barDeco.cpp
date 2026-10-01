@@ -269,6 +269,31 @@ void CHyprBar::renderText(SP<CTexture> out, const std::string& text, const CHypr
     cairo_paint(CAIRO);
     cairo_restore(CAIRO);
 
+    // SEKAI_VECTOR_CAPTION_ICONS — 창 조작 버튼은 글꼴이 아니라 선으로 그린다
+    if (text == "sekai:min" || text == "sekai:max" || text == "sekai:close") {
+        const double S  = std::round(std::min(bufferSize.x, bufferSize.y) * 0.625); // 아이콘 한 변
+        const double LW = std::max(1.0, std::round((double)scale));                // 선 굵기 (배율 1 = 1px)
+        const double X0 = std::round((bufferSize.x - S) / 2.0);
+        const double Y0 = std::round((bufferSize.y - S) / 2.0);
+        const double HP = LW / 2.0;                                                  // 픽셀 격자 정렬
+        cairo_set_source_rgba(CAIRO, color.r, color.g, color.b, color.a);
+        cairo_set_line_width(CAIRO, LW);
+        if (text == "sekai:min") {
+            cairo_set_line_cap(CAIRO, CAIRO_LINE_CAP_BUTT);
+            const double y = std::round(bufferSize.y / 2.0) + HP;
+            cairo_move_to(CAIRO, X0, y);
+            cairo_line_to(CAIRO, X0 + S, y);
+        } else if (text == "sekai:max") {
+            cairo_rectangle(CAIRO, X0 + HP, Y0 + HP, S - LW, S - LW);
+        } else {
+            cairo_set_line_cap(CAIRO, CAIRO_LINE_CAP_ROUND);
+            cairo_move_to(CAIRO, X0 + HP, Y0 + HP);
+            cairo_line_to(CAIRO, X0 + S - HP, Y0 + S - HP);
+            cairo_move_to(CAIRO, X0 + S - HP, Y0 + HP);
+            cairo_line_to(CAIRO, X0 + HP, Y0 + S - HP);
+        }
+        cairo_stroke(CAIRO);
+    } else {
     // draw title using Pango
     PangoLayout* layout = pango_cairo_create_layout(CAIRO);
     pango_layout_set_text(layout, text.c_str(), -1);
@@ -298,6 +323,7 @@ void CHyprBar::renderText(SP<CTexture> out, const std::string& text, const CHypr
     pango_cairo_show_layout(CAIRO, layout);
 
     g_object_unref(layout);
+    } // SEKAI_VECTOR_CAPTION_ICONS
 
     cairo_surface_flush(CAIROSURFACE);
 

@@ -627,7 +627,8 @@ void CHyprBar::renderBarButtonsText(CBox* barBox, const float scale, const float
             const double INSETY = std::round(4.0 * scale);
             const double PADX   = std::round(scaledButtonsPad / 2.0 - 2.0 * scale);
             CBox         bg     = {pos.x - PADX, barBox->y + INSETY, pos.w + PADX * 2, barBox->height - INSETY * 2};
-            CHyprColor   hc     = button.icon == "sekai:close" ? CHyprColor(0xc4 / 255.0, 0x2b / 255.0, 0x1c / 255.0, 1.0) : CHyprColor(1.0, 1.0, 1.0, 0.10);
+            CHyprColor   hc     = button.icon == "sekai:close" ? CHyprColor(0xc4 / 255.0, 0x2b / 255.0, 0x1c / 255.0, 1.0) :
+                                                              CHyprColor(button.fgcol.r, button.fgcol.g, button.fgcol.b, 0.12); // SEKAI_THEME
             hc.a *= a;
             g_pHyprOpenGL->renderRect(bg.round(), hc, (int)std::round(6.0 * scale), 2.0f);
         }

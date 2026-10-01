@@ -2861,6 +2861,15 @@ void CCompositor::moveWindowToWorkspaceSafe(PHLWINDOW pWindow, PHLWORKSPACE pWor
         pWindow->m_movingFromWorkspaceAlpha->setValueAndWarp(0.F);
         *pWindow->m_movingFromWorkspaceAlpha = 1.F;
     }
+    // SEKAI_DIALOG_FOLLOW: 딸린 창(대화상자 — parent 가 이 창인 창)도 같은 데스크톱으로. 부모를 최소화(special:min)하면
+    //   "저장할까요?" 같은 대화상자만 바탕화면에 홀로 남았다 (윈도우는 함께 숨긴다). 되살릴 때도 함께 돌아온다
+    std::vector<PHLWINDOW> sekaiChildren;
+    for (auto const& w : m_windows) {
+        if (w != pWindow && w->m_isMapped && w->parent() == pWindow && w->m_workspace != pWorkspace)
+            sekaiChildren.emplace_back(w);
+    }
+    for (auto const& w : sekaiChildren)
+        moveWindowToWorkspaceSafe(w, pWorkspace);
 }
 
 PHLWINDOW CCompositor::getForceFocus() {

@@ -285,7 +285,8 @@ std::string CHyprCtl::getWindowData(PHLWINDOW w, eHyprCtlOutputFormat format) {
     "focusHistoryID": {},
     "inhibitingIdle": {},
     "xdgTag": "{}",
-    "xdgDescription": "{}"
+    "xdgDescription": "{}",
+    "sekaiParent": "0x{:x}"
 }},)#",
             (uintptr_t)w.get(), (w->m_isMapped ? "true" : "false"), (w->isHidden() ? "true" : "false"), (int)w->m_realPosition->goal().x, (int)w->m_realPosition->goal().y,
             (int)w->m_realSize->goal().x, (int)w->m_realSize->goal().y, w->m_workspace ? w->workspaceID() : WORKSPACE_INVALID,
@@ -293,7 +294,8 @@ std::string CHyprCtl::getWindowData(PHLWINDOW w, eHyprCtlOutputFormat format) {
             (int64_t)w->monitorID(), escapeJSONStrings(w->m_class), escapeJSONStrings(w->m_title), escapeJSONStrings(w->m_initialClass), escapeJSONStrings(w->m_initialTitle),
             w->getPID(), ((int)w->m_isX11 == 1 ? "true" : "false"), (w->m_pinned ? "true" : "false"), (uint8_t)w->m_fullscreenState.internal, (uint8_t)w->m_fullscreenState.client,
             getGroupedData(w, format), getTagsData(w, format), (uintptr_t)w->m_swallowed.get(), getFocusHistoryID(w),
-            (g_pInputManager->isWindowInhibiting(w, false) ? "true" : "false"), escapeJSONStrings(w->xdgTag().value_or("")), escapeJSONStrings(w->xdgDescription().value_or("")));
+            (g_pInputManager->isWindowInhibiting(w, false) ? "true" : "false"), escapeJSONStrings(w->xdgTag().value_or("")), escapeJSONStrings(w->xdgDescription().value_or("")),
+            (uintptr_t)(w->parent() ? w->parent().get() : nullptr)); // SEKAI_PARENT: 딸린 창(대화상자)의 부모 — 작업 표시줄이 따로 세지 않게
     } else {
         return std::format(
             "Window {:x} -> {}:\n\tmapped: {}\n\thidden: {}\n\tat: {},{}\n\tsize: {},{}\n\tworkspace: {} ({})\n\tfloating: {}\n\tpseudo: {}\n\tmonitor: {}\n\tclass: {}\n\ttitle: "

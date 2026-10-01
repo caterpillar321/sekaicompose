@@ -2787,6 +2787,7 @@ void CCompositor::moveWindowToWorkspaceSafe(PHLWINDOW pWindow, PHLWORKSPACE pWor
     if (pWindow->m_workspace == pWorkspace)
         return;
 
+    const auto SEKAIFROM      = pWindow->m_workspace; // SEKAI_DIALOG_FOLLOW2
     const bool FULLSCREEN     = pWindow->isFullscreen();
     const auto FULLSCREENMODE = pWindow->m_fullscreenState.internal;
     const bool WASVISIBLE     = pWindow->m_workspace && pWindow->m_workspace->isVisible();
@@ -2870,6 +2871,11 @@ void CCompositor::moveWindowToWorkspaceSafe(PHLWINDOW pWindow, PHLWORKSPACE pWor
     }
     for (auto const& w : sekaiChildren)
         moveWindowToWorkspaceSafe(w, pWorkspace);
+    // SEKAI_DIALOG_FOLLOW2: 최소화된 대화상자를 되살리면(최소화 칸 → 보통 데스크톱) 함께 최소화돼 있던 부모도 데려온다 —
+    //   대화상자만 돌아와 홀로 떠 있지 않게
+    if (const auto P = pWindow->parent(); P && P->m_isMapped && SEKAIFROM && SEKAIFROM->m_isSpecialWorkspace && P->m_workspace == SEKAIFROM &&
+        !pWorkspace->m_isSpecialWorkspace)
+        moveWindowToWorkspaceSafe(P, pWorkspace);
 }
 
 PHLWINDOW CCompositor::getForceFocus() {

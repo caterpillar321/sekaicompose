@@ -9,6 +9,8 @@
 #include <hyprutils/animation/AnimatedVariable.hpp>
 #include <hyprutils/string/String.hpp>
 using namespace Hyprutils::String;
+#include <ranges>
+void sekaiFullscreenSync(PHLWORKSPACE ws, PHLWINDOW gone = nullptr); // SEKAI_MULTIMAX (Compositor.cpp)
 
 PHLWORKSPACE CWorkspace::create(WORKSPACEID id, PHLMONITOR monitor, std::string name, bool special, bool isEmpty) {
     PHLWORKSPACE workspace = makeShared<CWorkspace>(id, monitor, name, special, isEmpty);
@@ -518,7 +520,8 @@ MONITORID CWorkspace::monitorID() {
 }
 
 PHLWINDOW CWorkspace::getFullscreenWindow() {
-    for (auto const& w : g_pCompositor->m_windows) {
+    // SEKAI_MULTIMAX: 최대화 창이 여럿이면 맨 위 창 (m_windows 는 아래→위)
+    for (auto const& w : g_pCompositor->m_windows | std::views::reverse) {
         if (w->m_workspace == m_self && w->isFullscreen())
             return w;
     }
@@ -648,7 +651,7 @@ void CWorkspace::rename(const std::string& name) {
 }
 
 void CWorkspace::updateWindows() {
-    m_hasFullscreenWindow = std::ranges::any_of(g_pCompositor->m_windows, [this](const auto& w) { return w->m_isMapped && w->m_workspace == m_self && w->isFullscreen(); });
+    sekaiFullscreenSync(m_self.lock()); // SEKAI_MULTIMAX: 있나 없나에 더해 방식·위아래 창까지 (창을 옮기고 닫을 때 온다)
 
     for (auto const& w : g_pCompositor->m_windows) {
         if (!w->m_isMapped || w->m_workspace != m_self)

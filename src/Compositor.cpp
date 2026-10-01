@@ -1362,6 +1362,35 @@ bool CCompositor::isWindowActive(PHLWINDOW pWindow) {
     return PSURFACE == m_lastFocus || pWindow == m_lastWindow.lock();
 }
 
+// SEKAI_MULTIMAX: 한 데스크톱에 최대화(·전체 화면) 창이 여럿일 수 있다. 데스크톱의 "전체 화면 창"은 그중 맨 위 창이고,
+//   그 창보다 위에 쌓인 창만 보인다(m_createdOverFullscreen) — 쌓임 순서에서 다시 맞춘다.
+//   gone: 닫히는 중이라 빼고 볼 창
+void sekaiFullscreenSync(PHLWORKSPACE ws, PHLWINDOW gone = nullptr) {
+    if (!ws)
+        return;
+    PHLWINDOW top;
+    for (auto const& w : g_pCompositor->m_windows)
+        if (w != gone && w->m_workspace == ws && w->m_isMapped && w->isFullscreen())
+            top = w; // 뒤로 갈수록 위
+    ws->m_hasFullscreenWindow = top != nullptr;
+    ws->m_fullscreenMode      = !top ? FSMODE_NONE : (top->m_fullscreenState.internal & FSMODE_FULLSCREEN) ? FSMODE_FULLSCREEN : FSMODE_MAXIMIZED;
+    if (top) {
+        bool above = false;
+        for (auto const& w : g_pCompositor->m_windows) {
+            if (w == top) {
+                above                      = true;
+                w->m_createdOverFullscreen = true;
+                continue;
+            }
+            if (w == gone || w->m_workspace != ws || w->m_fadingOut || w->m_pinned)
+                continue;
+            w->m_createdOverFullscreen = above; // 밑의 최대화 창도 false — 가려진 창이 입력을 받지 않게
+        }
+    }
+    if (ws->m_monitor.lock())
+        g_pCompositor->updateFullscreenFadeOnWorkspace(ws);
+}
+
 void CCompositor::changeWindowZOrder(PHLWINDOW pWindow, bool top) {
     if (!validMapped(pWindow))
         return;
@@ -1394,7 +1423,7 @@ void CCompositor::changeWindowZOrder(PHLWINDOW pWindow, bool top) {
         for (auto const& w : kids)
             changeWindowZOrder(w, true);
         if (WS && WS->m_hasFullscreenWindow)
-            updateFullscreenFadeOnWorkspace(WS); // 아래로 간 창은 흐리게 숨기고, 올린 창은 보이게
+            sekaiFullscreenSync(WS); // SEKAI_MULTIMAX: 맨 위 최대화 창이 바뀌었을 수 있다 — 쌓임 순서대로 보이고 숨긴다
 
         sekaiRaising = false;
         return;
@@ -2355,8 +2384,10 @@ void CCompositor::setWindowFullscreenState(const PHLWINDOW PWINDOW, SFullscreenS
         PWINDOW->m_pinFullscreened = true;
     }
 
-    if (PWORKSPACE->m_hasFullscreenWindow && !PWINDOW->isFullscreen())
-        setWindowFullscreenInternal(PWORKSPACE->getFullscreenWindow(), FSMODE_NONE);
+    // SEKAI_MULTIMAX: 떠 있는 창끼리는 옛 최대화 창을 풀지 않는다 (윈도우처럼 최대화 창이 여럿)
+    if (const auto SEKAIFS = PWORKSPACE->getFullscreenWindow();
+        PWORKSPACE->m_hasFullscreenWindow && !PWINDOW->isFullscreen() && SEKAIFS && !(PWINDOW->m_isFloating && SEKAIFS->m_isFloating))
+        setWindowFullscreenInternal(SEKAIFS, FSMODE_NONE);
 
     const bool CHANGEINTERNAL = !PWINDOW->m_pinned && CURRENT_EFFECTIVE_MODE != EFFECTIVE_MODE;
 
@@ -2385,8 +2416,7 @@ void CCompositor::setWindowFullscreenState(const PHLWINDOW PWINDOW, SFullscreenS
     g_pLayoutManager->getCurrentLayout()->fullscreenRequestForWindow(PWINDOW, CURRENT_EFFECTIVE_MODE, EFFECTIVE_MODE);
 
     PWINDOW->m_fullscreenState.internal = state.internal;
-    PWORKSPACE->m_fullscreenMode        = EFFECTIVE_MODE;
-    PWORKSPACE->m_hasFullscreenWindow   = EFFECTIVE_MODE != FSMODE_NONE;
+    sekaiFullscreenSync(PWORKSPACE); // SEKAI_MULTIMAX: 데스크톱 상태는 맨 위 최대화 창에서 (다른 최대화 창이 남아 있을 수 있다)
 
     g_pEventManager->postEvent(SHyprIPCEvent{.event = "fullscreen", .data = std::to_string((int)EFFECTIVE_MODE != FSMODE_NONE)});
     EMIT_HOOK_EVENT("fullscreen", PWINDOW);
@@ -2395,13 +2425,7 @@ void CCompositor::setWindowFullscreenState(const PHLWINDOW PWINDOW, SFullscreenS
     updateWindowAnimatedDecorationValues(PWINDOW);
     g_pLayoutManager->getCurrentLayout()->recalculateMonitor(PWINDOW->monitorID());
 
-    // make all windows on the same workspace under the fullscreen window
-    for (auto const& w : m_windows) {
-        if (w->m_workspace == PWORKSPACE && !w->isFullscreen() && !w->m_fadingOut && !w->m_pinned)
-            w->m_createdOverFullscreen = false;
-    }
-
-    updateFullscreenFadeOnWorkspace(PWORKSPACE);
+    // SEKAI_MULTIMAX: 위아래 창 정리는 sekaiFullscreenSync 가 쌓임 순서로 했다 (최대화한 창은 레이아웃이 맨 위로 올렸다)
 
     // SEKAI_MISCLICK: 최대화·전체 화면한 창을 맨 위로 한 번 더 — SEKAI_RAISE 가 그 창의 대화상자를 함께
     //   올린다 (안 그러면 위에서 모두 내린 창에 대화상자도 들어가 숨었다)

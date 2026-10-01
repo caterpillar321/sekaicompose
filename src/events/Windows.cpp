@@ -1,5 +1,6 @@
 #include "Events.hpp"
 bool sekaiTakeInitialMaximize(PHLWINDOW w); // SEKAI_INITIAL_MAXIMIZE (desktop/Window.cpp)
+void sekaiFullscreenSync(PHLWORKSPACE ws, PHLWINDOW gone = nullptr); // SEKAI_MULTIMAX (Compositor.cpp)
 
 #include "../Compositor.hpp"
 #include "../helpers/WLClasses.hpp"
@@ -667,10 +668,14 @@ void Events::listener_mapWindow(void* owner, void* data) {
     if (requestedClientFSMode.has_value() && (PWINDOW->m_suppressedEvents & SUPPRESS_MAXIMIZE))
         requestedClientFSMode = (eFullscreenMode)((uint8_t)requestedClientFSMode.value_or(FSMODE_NONE) & ~(uint8_t)FSMODE_MAXIMIZED);
 
-    if (!PWINDOW->m_noInitialFocus && (requestedInternalFSMode.has_value() || requestedClientFSMode.has_value() || requestedFSState.has_value())) {
+    // SEKAI_MULTIMAX: 최대화만 청한 떠 있는 창은 초점을 받지 못해도(시작 메뉴가 키보드를 쥐고 있을 때) 최대화로 연다
+    const bool SEKAIMAXONLY = PWINDOW->m_isFloating && !requestedInternalFSMode.has_value() && !requestedFSState.has_value() && requestedClientFSMode == FSMODE_MAXIMIZED;
+    if ((!PWINDOW->m_noInitialFocus || SEKAIMAXONLY) && (requestedInternalFSMode.has_value() || requestedClientFSMode.has_value() || requestedFSState.has_value())) {
         // fix fullscreen on requested (basically do a switcheroo)
-        if (PWINDOW->m_workspace->m_hasFullscreenWindow)
-            g_pCompositor->setWindowFullscreenInternal(PWINDOW->m_workspace->getFullscreenWindow(), FSMODE_NONE);
+        //   SEKAI_MULTIMAX: 떠 있는 창끼리는 옛 최대화 창을 풀지 않는다
+        if (const auto SEKAIFS = PWINDOW->m_workspace->getFullscreenWindow();
+            PWINDOW->m_workspace->m_hasFullscreenWindow && SEKAIFS && !(PWINDOW->m_isFloating && SEKAIFS->m_isFloating))
+            g_pCompositor->setWindowFullscreenInternal(SEKAIFS, FSMODE_NONE);
 
         PWINDOW->m_realPosition->warp();
         PWINDOW->m_realSize->warp();
@@ -827,7 +832,7 @@ void Events::listener_unmapWindow(void* owner, void* data) {
     const auto PWORKSPACE = PWINDOW->m_workspace;
 
     if (PWORKSPACE->m_hasFullscreenWindow && PWINDOW->isFullscreen())
-        PWORKSPACE->m_hasFullscreenWindow = false;
+        sekaiFullscreenSync(PWORKSPACE, PWINDOW); // SEKAI_MULTIMAX: 다른 최대화 창이 남아 있으면 그 창이 맨 위
 
     g_pLayoutManager->getCurrentLayout()->onWindowRemoved(PWINDOW);
 

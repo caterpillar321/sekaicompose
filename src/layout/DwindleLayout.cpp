@@ -530,12 +530,16 @@ void CHyprDwindleLayout::calculateWorkspace(const PHLWORKSPACE& pWorkspace) {
 
     if (pWorkspace->m_hasFullscreenWindow) {
         // massive hack from the fullscreen func
-        const auto PFULLWINDOW = pWorkspace->getFullscreenWindow();
+        // SEKAI_MULTIMAX: 최대화·전체 화면 창이 여럿일 수 있다 — 모두 맞춘다 (전엔 맨 위 창만)
+        for (auto const& PFULLWINDOW : g_pCompositor->m_windows) {
+        if (PFULLWINDOW->m_workspace != pWorkspace || !PFULLWINDOW->m_isMapped || !PFULLWINDOW->isFullscreen())
+            continue;
+        const auto SEKAIMODE = (PFULLWINDOW->m_fullscreenState.internal & FSMODE_FULLSCREEN) ? FSMODE_FULLSCREEN : FSMODE_MAXIMIZED;
 
-        if (pWorkspace->m_fullscreenMode == FSMODE_FULLSCREEN) {
+        if (SEKAIMODE == FSMODE_FULLSCREEN) {
             *PFULLWINDOW->m_realPosition = PMONITOR->m_position;
             *PFULLWINDOW->m_realSize     = PMONITOR->m_size;
-        } else if (pWorkspace->m_fullscreenMode == FSMODE_MAXIMIZED) {
+        } else if (SEKAIMODE == FSMODE_MAXIMIZED) {
             SDwindleNodeData fakeNode;
             fakeNode.pWindow        = PFULLWINDOW;
             fakeNode.box            = {PMONITOR->m_position + PMONITOR->m_reservedTopLeft, PMONITOR->m_size - PMONITOR->m_reservedTopLeft - PMONITOR->m_reservedBottomRight};
@@ -546,6 +550,7 @@ void CHyprDwindleLayout::calculateWorkspace(const PHLWORKSPACE& pWorkspace) {
 
             applyNodeDataToWindow(&fakeNode);
         }
+        } // SEKAI_MULTIMAX
 
         // if has fullscreen, don't calculate the rest
         return;

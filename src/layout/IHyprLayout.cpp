@@ -1008,6 +1008,8 @@ Vector2D IHyprLayout::predictSizeForNewWindow(PHLWINDOW pWindow) {
 bool IHyprLayout::updateDragWindow() {
     const auto DRAGGINGWINDOW = g_pInputManager->m_currentlyDraggedWindow.lock();
     const bool WAS_FULLSCREEN = DRAGGINGWINDOW->isFullscreen();
+    // SEKAI_DRAG_RESTORE: 최대화를 풀기 전의 자리 — 커서가 제목줄의 어디를 잡았는지
+    const CBox SEKAIMAXBOX = {DRAGGINGWINDOW->m_realPosition->goal(), DRAGGINGWINDOW->m_realSize->goal()};
 
     if (g_pInputManager->m_dragThresholdReached) {
         if (WAS_FULLSCREEN) {
@@ -1028,8 +1030,18 @@ bool IHyprLayout::updateDragWindow() {
     m_draggingWindowOriginalFloatSize = DRAGGINGWINDOW->m_lastFloatingSize;
 
     if (WAS_FULLSCREEN && DRAGGINGWINDOW->m_isFloating) {
-        const auto MOUSECOORDS          = g_pInputManager->getMouseCoordsInternal();
-        *DRAGGINGWINDOW->m_realPosition = MOUSECOORDS - DRAGGINGWINDOW->m_realSize->goal() / 2.f;
+        const auto MOUSECOORDS = g_pInputManager->getMouseCoordsInternal();
+        // SEKAI_DRAG_RESTORE: 윈도우처럼 — 가로는 잡은 비율 그대로, 세로는 창 위쪽에서 커서까지 그대로
+        //   (원래는 창 가운데를 커서에 맞춰, 큰 창은 제목줄이 커서보다 한참 위·화면 밖으로 나갔다)
+        const auto NEWSIZE = DRAGGINGWINDOW->m_realSize->goal();
+        if (SEKAIMAXBOX.w > 0 && SEKAIMAXBOX.h > 0) {
+            const double RELX = std::clamp((MOUSECOORDS.x - SEKAIMAXBOX.x) / SEKAIMAXBOX.w, 0.0, 1.0);
+            double       offY = MOUSECOORDS.y - SEKAIMAXBOX.y; // 제목줄을 잡았으면 음수 (창 위쪽보다 위)
+            if (offY > NEWSIZE.y)
+                offY = NEWSIZE.y / 2.0; // 창 아래쪽을 잡고 끌었다 (Super+끌기) — 줄어든 창 안에 커서가 오게
+            *DRAGGINGWINDOW->m_realPosition = Vector2D(MOUSECOORDS.x - RELX * NEWSIZE.x, MOUSECOORDS.y - offY).round();
+        } else
+            *DRAGGINGWINDOW->m_realPosition = MOUSECOORDS - NEWSIZE / 2.f;
     } else if (!DRAGGINGWINDOW->m_isFloating && g_pInputManager->m_dragMode == MBIND_MOVE) {
         Vector2D MINSIZE                   = DRAGGINGWINDOW->requestedMinSize().clamp(DRAGGINGWINDOW->m_windowData.minSize.valueOr(Vector2D(MIN_WINDOW_SIZE, MIN_WINDOW_SIZE)));
         DRAGGINGWINDOW->m_lastFloatingSize = (DRAGGINGWINDOW->m_realSize->goal() * 0.8489).clamp(MINSIZE, Vector2D{}).floor();

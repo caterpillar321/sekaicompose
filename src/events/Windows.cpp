@@ -607,7 +607,9 @@ void Events::listener_mapWindow(void* owner, void* data) {
     // check LS focus grab
     const auto PFORCEFOCUS  = g_pCompositor->getForceFocus();
     const auto PLSFROMFOCUS = g_pCompositor->getLayerSurfaceFromSurface(g_pCompositor->m_lastFocus.lock());
-    if (PLSFROMFOCUS && PLSFROMFOCUS->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE)
+    // SEKAI_LAYER_FOCUS: 메뉴·런처(위쪽 레이어)만 막는다 — 바탕화면(아래쪽 레이어)이 초점을 갖고 있어도 새 창은 초점을 받는다
+    if (PLSFROMFOCUS && PLSFROMFOCUS->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE &&
+        PLSFROMFOCUS->m_layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP)
         PWINDOW->m_noInitialFocus = true;
 
     if (PWINDOW->m_workspace->m_hasFullscreenWindow && !requestedInternalFSMode.has_value() && !requestedClientFSMode.has_value() && !PWINDOW->m_isFloating) {

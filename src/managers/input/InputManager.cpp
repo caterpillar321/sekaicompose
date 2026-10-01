@@ -149,6 +149,12 @@ void sekaiClientMoveStart(PHLWINDOW w) {
 
 #include <aquamarine/input/Input.hpp>
 
+// SEKAI_LAYER_REFOCUS: 보이는 작업 공간에 마지막으로 초점을 가졌던 창이 있나
+static bool sekaiLastWindowShown() {
+    const auto W = g_pCompositor->m_lastWindow.lock();
+    return W && W->m_isMapped && W->m_workspace && W->m_workspace->isVisibleNotCovered();
+}
+
 CInputManager::CInputManager() {
     m_listeners.setCursorShape = PROTO::cursorShape->m_events.setShape.listen([this](const CCursorShapeProtocol::SSetShapeEvent& event) {
         const bool SEKAIDEFER = m_cursorImageOverridden && m_borderIconDirection != BORDERICON_NONE && m_clickBehavior != CLICKMODE_KILL; // SEKAI_BORDER_FIX: 테두리 커서 동안이면 적어만 둔다
@@ -713,6 +719,7 @@ void CInputManager::mouseMoveUnified(uint32_t time, bool refocus, bool mouse) {
         }
 
         if (pFoundLayerSurface && (pFoundLayerSurface->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) && FOLLOWMOUSE != 3 &&
+            !(FOLLOWMOUSE == 2 && pFoundLayerSurface->m_layer <= ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM && (!refocus || sekaiLastWindowShown())) && // SEKAI_LAYER_HOVER
             (allowKeyboardRefocus || pFoundLayerSurface->m_layerSurface->m_current.interactivity == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE)) {
             g_pCompositor->focusSurface(foundSurface);
         }
@@ -920,8 +927,18 @@ void CInputManager::processMouseDownNormal(const IPointer::SButtonEvent& e) {
             if (*PFOLLOWMOUSE == 3) // don't refocus on full loose
                 break;
 
+            // SEKAI_LAYER_HOVER: 창이 아닌 곳(바탕화면 레이어)을 누르면 그 레이어에 키보드 초점 — 올림으로는 안 준다
+            if (!w && *PFOLLOWMOUSE == 2) {
+                const auto PSURF = g_pSeatManager->m_state.pointerFocus.lock();
+                const auto PLS   = PSURF ? g_pCompositor->getLayerSurfaceFromSurface(PSURF) : nullptr;
+                if (PLS && PLS->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE && g_pSeatManager->m_state.keyboardFocus != PSURF)
+                    g_pCompositor->focusSurface(PSURF);
+            }
+
+            // SEKAI_LAYER_FOCUS: 누른 창이 마지막 창이어도 키보드가 레이어(바탕화면 등)에 가 있으면 다시 초점
+            const bool SEKAIKBONLAYER = w && g_pCompositor->getLayerSurfaceFromSurface(g_pSeatManager->m_state.keyboardFocus.lock());
             if ((g_pSeatManager->m_mouse.expired() || !isConstrained()) /* No constraints */
-                && (w && g_pCompositor->m_lastWindow.lock() != w) /* window should change */) {
+                && (w && (g_pCompositor->m_lastWindow.lock() != w || SEKAIKBONLAYER)) /* window should change */) {
                 // a bit hacky
                 // if we only pressed one button, allow us to refocus. m_lCurrentlyHeldButtons.size() > 0 will stick the focus
                 if (m_currentlyHeldButtons.size() == 1) {

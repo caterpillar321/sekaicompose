@@ -8,6 +8,9 @@
 #include "Seat.hpp"
 #include "Compositor.hpp"
 #include "../../xwayland/XWayland.hpp"
+
+// SEKAI_DND_HOTSPOT: 끌기 아이콘 표면을 지금까지 옮긴 양 (attach·offset 의 x, y 를 쌓은 것)
+static Vector2D sekaiDndOffset;
 #include "../../xwayland/Server.hpp"
 #include "../../managers/input/InputManager.hpp"
 #include "../../managers/HookSystemManager.hpp"
@@ -563,9 +566,13 @@ void CWLDataDeviceProtocol::initiateDrag(WP<CWLDataSourceResource> currentSource
     m_dnd.currentSource = currentSource;
     m_dnd.originSurface = origin;
     m_dnd.dndSurface    = dragSurface;
+    sekaiDndOffset      = dragSurface ? dragSurface->m_current.offset : Vector2D{}; // SEKAI_DND_HOTSPOT: 시작 전에 커밋한 기준점
     if (dragSurface) {
         m_dnd.dndSurfaceDestroy = dragSurface->m_events.destroy.listen([this] { abortDrag(); });
         m_dnd.dndSurfaceCommit  = dragSurface->m_events.commit.listen([this] {
+            if (m_dnd.dndSurface->m_current.updated.bits.offset) // SEKAI_DND_HOTSPOT: 옮긴 양을 쌓는다
+                sekaiDndOffset += m_dnd.dndSurface->m_current.offset;
+
             if (m_dnd.dndSurface->m_current.texture && !m_dnd.dndSurface->m_mapped) {
                 m_dnd.dndSurface->map();
                 return;
@@ -807,7 +814,7 @@ void CWLDataDeviceProtocol::renderDND(PHLMONITOR pMonitor, const Time::steady_tp
 
     Vector2D   surfacePos = POS;
 
-    surfacePos += m_dnd.dndSurface->m_current.offset;
+    surfacePos += sekaiDndOffset; // SEKAI_DND_HOTSPOT — 마지막 커밋의 x, y 만이 아니라 쌓은 값
 
     CBox                         box = CBox{surfacePos, m_dnd.dndSurface->m_current.size}.translate(-pMonitor->m_position).scale(pMonitor->m_scale);
 

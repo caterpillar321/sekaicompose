@@ -196,7 +196,7 @@ static bool sekaiInButton(PHLWINDOW w, const Vector2D& c, const Vector2D& curren
 }
 
 void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
-    if (e.state != WL_POINTER_BUTTON_STATE_PRESSED && m_bDraggingThis) { // SEKAI_SNAP_DROP
+    if (e.state != WL_POINTER_BUTTON_STATE_PRESSED && (m_bDraggingThis || m_iSekaiArmed >= 0)) { // SEKAI_SNAP_DROP · SEKAI_BUTTON_RELEASE
         handleUpEvent(info);
         return;
     }
@@ -341,6 +341,22 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
 }
 
 void CHyprBar::handleUpEvent(SCallbackInfo& info) {
+    // SEKAI_BUTTON_RELEASE: 창 단추는 같은 단추 위에서 뗄 때 실행한다 (윈도우처럼 — 누른 채 벗어나 떼면 취소).
+    //   전에는 누르는 순간 실행해서, 닫기를 잘못 누르고 손을 빼도 창이 닫혔다 (저장 안 한 메모장도)
+    if (m_iSekaiArmed >= 0) {
+        const int ARMED = m_iSekaiArmed;
+        m_iSekaiArmed   = -1;
+        if (m_bCancelledDown)
+            info.cancelled = true;
+        m_bCancelledDown = false;
+        m_bDragPending   = false;
+        m_bTouchEv       = false;
+        const auto PW    = m_pWindow.lock();
+        if (PW && validMapped(PW) && inputIsValid() && sekaiButtonAt(cursorRelativeToBar()) == ARMED)
+            sekaiRunButton(ARMED);
+        damageOnButtonHover();
+        return;
+    }
     if (m_pWindow.lock() != g_pCompositor->m_lastWindow.lock()) {
         if (m_bDraggingThis) { // SEKAI_SNAP_GONE: 초점이 옮겨 가(창이 닫힘) 놓음이 여기서 끝났다
             g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
@@ -385,38 +401,61 @@ void CHyprBar::handleMovement() {
 }
 
 bool CHyprBar::doButtonPress(Hyprlang::INT* const* PBARPADDING, Hyprlang::INT* const* PBARBUTTONPADDING, Hyprlang::INT* const* PHEIGHT, Vector2D COORDS, const bool BUTTONSRIGHT) {
-    //check if on a button
-    float offset = **PBARPADDING;
+    (void)PBARPADDING; (void)PBARBUTTONPADDING; (void)PHEIGHT; (void)BUTTONSRIGHT;
+    // SEKAI_BUTTON_RELEASE: 누를 때는 어느 단추인지 기억만 한다 — 실행은 뗄 때 (handleUpEvent)
+    const int IDX = sekaiButtonAt(COORDS);
+    if (IDX < 0)
+        return false;
+    m_iSekaiArmed  = IDX;
+    m_bDragPending = false;
+    return true;
+}
 
+int CHyprBar::sekaiButtonAt(Vector2D COORDS) {
+    static auto* const PHEIGHT           = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:bar_height")->getDataStaticPtr();
+    static auto* const PBARBUTTONPADDING = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:bar_button_padding")->getDataStaticPtr();
+    static auto* const PBARPADDING       = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:bar_padding")->getDataStaticPtr();
+    static auto* const PALIGNBUTTONS     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:bar_buttons_alignment")->getDataStaticPtr();
+    const bool         BUTTONSRIGHT      = std::string{*PALIGNBUTTONS} != "left";
+
+    float              offset = **PBARPADDING;
+    int                idx    = 0;
     for (auto& b : g_pGlobalState->buttons) {
-        if (sekaiDialogSkip(m_pWindow.lock(), b.icon)) // SEKAI_DIALOG_BUTTONS
+        if (sekaiDialogSkip(m_pWindow.lock(), b.icon)) { // SEKAI_DIALOG_BUTTONS
+            idx++;
             continue;
+        }
         const auto BARBUF     = Vector2D{(int)assignedBoxGlobal().w, **PHEIGHT};
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - b.size - offset : offset), (BARBUF.y - b.size) / 2.0}.floor();
 
-        if (sekaiInButton(m_pWindow.lock(), COORDS, currentPos, b.size, **PBARBUTTONPADDING, BARBUF.y)) { // SEKAI_BUTTON_SLOT
-            // SEKAI_BAR_INPUT: 창 조작 단추는 이 창에 곧바로 (exec 로 hyprctl 을 띄우면 도착했을 때의 초점 창에 먹었다)
-            if (const auto W = m_pWindow.lock(); W && (b.icon == "sekai:close" || b.icon == "sekai:min" || b.icon == "sekai:max")) {
-                const auto ADDR = std::format("address:0x{:x}", (uintptr_t)W.get());
-                if (b.icon == "sekai:close")
-                    g_pKeybindManager->m_dispatchers["closewindow"](ADDR);
-                else if (b.icon == "sekai:min")
-                    g_pKeybindManager->m_dispatchers["movetoworkspacesilent"]("special:min," + ADDR);
-                else {
-                    g_pCompositor->focusWindow(W); // fullscreen 은 초점 창에 걸린다 — 방금(누를 때) 준 초점을 확실히
-                    if (g_pCompositor->m_lastWindow.lock() == W)
-                        g_pKeybindManager->m_dispatchers["fullscreen"]("1");
-                }
-                return true;
-            }
-            // hit on close
-            g_pKeybindManager->m_dispatchers["exec"](b.cmd);
-            return true;
-        }
+        if (sekaiInButton(m_pWindow.lock(), COORDS, currentPos, b.size, **PBARBUTTONPADDING, BARBUF.y)) // SEKAI_BUTTON_SLOT
+            return idx;
 
         offset += **PBARBUTTONPADDING + b.size;
+        idx++;
     }
-    return false;
+    return -1;
+}
+
+void CHyprBar::sekaiRunButton(int idx) {
+    if (idx < 0 || idx >= (int)g_pGlobalState->buttons.size())
+        return;
+    const auto& b = g_pGlobalState->buttons[idx];
+    // SEKAI_BAR_INPUT: 창 조작 단추는 이 창에 곧바로 (exec 로 hyprctl 을 띄우면 도착했을 때의 초점 창에 먹었다)
+    if (const auto W = m_pWindow.lock(); W && (b.icon == "sekai:close" || b.icon == "sekai:min" || b.icon == "sekai:max")) {
+        const auto ADDR = std::format("address:0x{:x}", (uintptr_t)W.get());
+        if (b.icon == "sekai:close")
+            g_pKeybindManager->m_dispatchers["closewindow"](ADDR);
+        else if (b.icon == "sekai:min")
+            g_pKeybindManager->m_dispatchers["movetoworkspacesilent"]("special:min," + ADDR);
+        else {
+            g_pCompositor->focusWindow(W); // fullscreen 은 초점 창에 걸린다 — 방금(누를 때) 준 초점을 확실히
+            if (g_pCompositor->m_lastWindow.lock() == W)
+                g_pKeybindManager->m_dispatchers["fullscreen"]("1");
+        }
+        return;
+    }
+    g_pKeybindManager->m_dispatchers["exec"](b.cmd);
 }
 
 void CHyprBar::renderText(SP<CTexture> out, const std::string& text, const CHyprColor& color, const Vector2D& bufferSize, const float scale, const int fontSize) {

@@ -90,6 +90,8 @@ class CHyprBar : public IHyprWindowDecoration {
     void                      handleUpEvent(SCallbackInfo& info);
     void                      handleMovement();
     bool doButtonPress(Hyprlang::INT* const* PBARPADDING, Hyprlang::INT* const* PBARBUTTONPADDING, Hyprlang::INT* const* PHEIGHT, Vector2D COORDS, bool BUTTONSRIGHT);
+    int  sekaiButtonAt(Vector2D COORDS); // SEKAI_BUTTON_RELEASE: 이 자리의 단추 번호 (없으면 -1)
+    void sekaiRunButton(int idx);
 
     CBox assignedBoxGlobal();
 
@@ -106,6 +108,7 @@ class CHyprBar : public IHyprWindowDecoration {
     bool                 m_bTouchEv       = false;
     bool                 m_bDragPending   = false;
     bool                 m_bCancelledDown = false;
+    int                  m_iSekaiArmed    = -1; // SEKAI_BUTTON_RELEASE: 누른 단추 — 같은 단추 위에서 떼야 실행
 
     // store hover state for buttons as a bitfield
     unsigned int m_iButtonHoverState = 0;

@@ -168,6 +168,19 @@ bool CHyprBar::inputIsValid() {
     return true;
 }
 
+// SEKAI_BORDER_EDGE2: 창(제목줄·테두리 포함) 변 중 화면 끝(모니터 끝·작업 표시줄 끝)에 붙은 변 — 1 왼 · 2 오 · 4 위.
+//   Hyprland 의 sekaiScreenEdges(patch-hyprland-bordergrab.py)와 같은 상자·기준
+static int sekaiBarScreenEdges(PHLWINDOW w) {
+    const auto M = w ? w->m_monitor.lock() : nullptr;
+    if (!M)
+        return 0;
+    const auto   EXT = w->getFullWindowReservedArea();
+    const auto   POS = w->m_realPosition->value(), SIZE = w->m_realSize->value();
+    const double L = M->m_position.x + M->m_reservedTopLeft.x, T = M->m_position.y + M->m_reservedTopLeft.y;
+    const double R = M->m_position.x + M->m_size.x - M->m_reservedBottomRight.x;
+    return (POS.x - EXT.topLeft.x <= L + 1 ? 1 : 0) | (POS.x + SIZE.x + EXT.bottomRight.x >= R - 1 ? 2 : 0) | (POS.y - EXT.topLeft.y <= T + 1 ? 4 : 0);
+}
+
 void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
     if (e.state != WL_POINTER_BUTTON_STATE_PRESSED && m_bDraggingThis) { // SEKAI_SNAP_DROP
         handleUpEvent(info);
@@ -180,6 +193,19 @@ void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
     if (e.state != WL_POINTER_BUTTON_STATE_PRESSED) {
         handleUpEvent(info);
         return;
+    }
+
+    // SEKAI_BORDER_GRAB: 제목줄 가장자리 4px 은 창 테두리 — Hyprland 가 크기 조절하게 넘긴다
+    //   SEKAI_BORDER_GRAB2: Hyprland 가 테두리 크기 조절을 하는 창일 때만 (최대화·전체 화면은 아니다)
+    static auto* const PSEKAIRESIZE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "general:resize_on_border")->getDataStaticPtr();
+    const auto         SEKAI_C      = cursorRelativeToBar();
+    const auto         SEKAI_W      = m_pWindow.lock();
+    if (**PSEKAIRESIZE && SEKAI_W && !SEKAI_W->isFullscreen() && !SEKAI_W->isX11OverrideRedirect()) {
+        // SEKAI_BORDER_EDGE: 화면 끝(모니터 끝·작업 표시줄 끝)에 붙은 변은 넘기지 않는다 — 제목줄 몫
+        const auto SEKAI_B = assignedBoxGlobal();
+        const int  SEKAI_E = sekaiBarScreenEdges(SEKAI_W); // SEKAI_BORDER_EDGE2: Hyprland 와 같은 상자로
+        if ((SEKAI_C.y < 4 && !(SEKAI_E & 4)) || (SEKAI_C.x < 4 && !(SEKAI_E & 1)) || (SEKAI_C.x > SEKAI_B.w - 4 && !(SEKAI_E & 2)))
+            return;
     }
 
     handleDownEvent(info, std::nullopt);
@@ -222,6 +248,12 @@ void CHyprBar::onTouchMove(SCallbackInfo& info, ITouch::SMotionEvent e) {
 
 void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownEvent> touchEvent) {
     m_bTouchEv = touchEvent.has_value();
+    // SEKAI_BAR_HIDDEN: 막대를 숨긴 창(nobar — 제목줄을 스스로 그리는 크롬·탐색기)의 누름은 앱 몫이다
+    //   (전엔 화면 끝까지 넓힌 판정(EDGE2)이 최대화한 창의 탭 줄·창 단추를 가로챘다)
+    if (m_hidden) {
+        m_bDragPending = false;
+        return;
+    }
 
     const auto         PWINDOW = m_pWindow.lock();
 
@@ -236,7 +268,21 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
     const bool         BUTTONSRIGHT    = std::string{*PALIGNBUTTONS} != "left";
     const std::string  ON_DOUBLE_CLICK = *PONDOUBLECLICK;
 
-    if (!VECINRECT(COORDS, 0, 0, assignedBoxGlobal().w, **PHEIGHT - 1)) {
+    // SEKAI_BORDER_EDGE2: 화면 끝에 붙은 변 쪽은 제목줄 바깥 테두리 픽셀도 제목줄 몫 (화면 맨 위·끝을 눌러도 끌기)
+    double SEKAI_X0 = 0, SEKAI_Y0 = 0, SEKAI_X1 = assignedBoxGlobal().w;
+    if (PWINDOW && !m_bDraggingThis) {
+        const int  SE  = sekaiBarScreenEdges(PWINDOW);
+        const auto BB  = assignedBoxGlobal();
+        const auto EXT = PWINDOW->getFullWindowReservedArea();
+        const auto POS = PWINDOW->m_realPosition->value(), SIZE = PWINDOW->m_realSize->value();
+        if (SE & 1)
+            SEKAI_X0 = std::min(0.0, (POS.x - EXT.topLeft.x) - BB.x);
+        if (SE & 2)
+            SEKAI_X1 = std::max(BB.w, (POS.x + SIZE.x + EXT.bottomRight.x) - BB.x);
+        if (SE & 4)
+            SEKAI_Y0 = std::min(0.0, (POS.y - EXT.topLeft.y) - BB.y);
+    }
+    if (!VECINRECT(COORDS, SEKAI_X0, SEKAI_Y0, SEKAI_X1, **PHEIGHT - 1)) {
 
         if (m_bDraggingThis) {
             if (m_bTouchEv) {

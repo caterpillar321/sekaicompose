@@ -345,6 +345,14 @@ static void sekaiKeepTitleReachable(PHLWINDOW w) {
     w->sendWindowSize();
 }
 
+void IHyprLayout::sekaiSetDragAnchor(const Vector2D& pos) {
+    const auto W = g_pInputManager->m_currentlyDraggedWindow.lock();
+    if (!W || W->isFullscreen())
+        return;
+    m_beginDragXY = pos;
+    m_lastDragXY  = pos;
+}
+
 void IHyprLayout::onEndDragWindow() {
     const auto DRAGGINGWINDOW = g_pInputManager->m_currentlyDraggedWindow.lock();
 
@@ -623,8 +631,17 @@ void IHyprLayout::onMouseMove(const Vector2D& mousePos) {
         if ((m_beginDragXY.distanceSq(mousePos) <= std::pow(*PDRAGTHRESHOLD, 2) && m_beginDragXY == m_lastDragXY))
             return;
         g_pInputManager->m_dragThresholdReached = true;
+        // SEKAI_DRAG_ANCHOR: 문턱을 넘는 사이 움직인 만큼도 반영한다 — 전엔 기준점을 이때의 커서로 다시 잡아, 창이 커서보다
+        //   문턱(5px)+첫 움직임만큼 덜 따라왔다 (끌 때마다 커서가 제목줄 아래로 밀려 나갔다, 크기 조절은 모자란 채 끝났다).
+        //   최대화를 풀며 창을 커서에 다시 맞추는 때(SEKAI_DRAG_RESTORE)는 그 자리가 기준이다
+        const auto SEKAIPRESS = m_beginDragXY;
+        const bool SEKAIWASFS = DRAGGINGWINDOW->isFullscreen();
         if (updateDragWindow())
             return;
+        if (!SEKAIWASFS) {
+            m_beginDragXY = SEKAIPRESS;
+            m_lastDragXY  = SEKAIPRESS;
+        }
     }
 
     static auto TIMER = std::chrono::high_resolution_clock::now(), MSTIMER = TIMER;

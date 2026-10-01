@@ -337,6 +337,7 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
     } else {
         m_lastMouseDown = Time::steadyNow();
         m_bDragPending  = true;
+        m_sekaiPressXY  = g_pInputManager->getMouseCoordsInternal(); // SEKAI_DRAG_ANCHOR
     }
 }
 
@@ -393,6 +394,9 @@ void CHyprBar::handleUpEvent(SCallbackInfo& info) {
 
 void CHyprBar::handleMovement() {
     g_pKeybindManager->m_dispatchers["mouse"]("1movewindow");
+    // SEKAI_DRAG_ANCHOR: 끌기는 첫 움직임에서 시작한다 — 기준점은 누른 자리로 (첫 움직임만큼 창이 덜 따라오지 않게)
+    if (!m_bTouchEv && g_pLayoutManager->getCurrentLayout())
+        g_pLayoutManager->getCurrentLayout()->sekaiSetDragAnchor(m_sekaiPressXY);
     m_bDraggingThis = true;
     sekaiZone       = "none"; // SEKAI_SNAP
     g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapstart", std::format("{:x}", (uintptr_t)m_pWindow.lock().get())});

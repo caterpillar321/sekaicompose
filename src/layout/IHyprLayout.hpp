@@ -48,6 +48,9 @@ class IHyprLayout {
     virtual void onEnable()  = 0;
     virtual void onDisable() = 0;
 
+    // SEKAI_DRAG_ANCHOR: 끌기의 기준점을 누른 자리로 (제목줄 플러그인이 첫 움직임에서야 끌기를 넘겨도 그만큼 잃지 않게)
+    void sekaiSetDragAnchor(const Vector2D& pos);
+
     /*
         Called when a window is created (mapped)
         The layout HAS TO set the goal pos and size (anim mgr will use it)

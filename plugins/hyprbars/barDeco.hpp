@@ -109,6 +109,7 @@ class CHyprBar : public IHyprWindowDecoration {
     bool                 m_bDragPending   = false;
     bool                 m_bCancelledDown = false;
     int                  m_iSekaiArmed    = -1; // SEKAI_BUTTON_RELEASE: 누른 단추 — 같은 단추 위에서 떼야 실행
+    Vector2D             m_sekaiPressXY;        // SEKAI_DRAG_ANCHOR: 제목줄을 누른 자리 (전역 좌표)
 
     // store hover state for buttons as a bitfield
     unsigned int m_iButtonHoverState = 0;

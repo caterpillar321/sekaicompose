@@ -38,6 +38,66 @@
 #include "../../managers/LayoutManager.hpp"
 #include "../../managers/permissions/DynamicPermissionManager.hpp"
 
+// ── SEKAI_BORDER_GRAB: 윈도우처럼 창 테두리로 크기 조절 ─────────────────
+int                     g_sekaiResizeAxis = 0; // 0 모서리 · 1 세로만(위·아래 가장자리) · 2 가로만(왼쪽·오른쪽) — IHyprLayout 가 읽는다
+static constexpr double SEKAI_INNER_GRAB  = 4;  // 창 안쪽으로도 이만큼은 가장자리
+static constexpr double SEKAI_CORNER      = 20; // 가장자리 끝에서 이만큼은 모서리
+
+// SEKAI_BORDER_EDGE: 창(제목줄 포함) 상자 B 의 변 중 화면 끝(모니터 끝·작업 표시줄 끝)에 붙은 변 — 방향 비트
+static int sekaiScreenEdges(PHLWINDOW w, const CBox& B) {
+    const auto M = w->m_monitor.lock();
+    if (!M)
+        return 0;
+    const double L = M->m_position.x + M->m_reservedTopLeft.x, T = M->m_position.y + M->m_reservedTopLeft.y;
+    const double R = M->m_position.x + M->m_size.x - M->m_reservedBottomRight.x, D = M->m_position.y + M->m_size.y - M->m_reservedBottomRight.y;
+    return (B.x <= L + 1 ? 1 : 0) | (B.x + B.width >= R - 1 ? 2 : 0) | (B.y <= T + 1 ? 4 : 0) | (B.y + B.height >= D - 1 ? 8 : 0);
+}
+
+// 커서가 창(제목줄 포함) 테두리 근처면 방향 비트 (1 왼 · 2 오 · 4 위 · 8 아래), 아니면 0
+static int sekaiBorderAt(PHLWINDOW w, const Vector2D& p, double outer) {
+    const CBox real = {w->m_realPosition->value().x, w->m_realPosition->value().y, w->m_realSize->value().x, w->m_realSize->value().y};
+    const auto EXT  = w->getFullWindowReservedArea(); // 제목줄 등 장식이 차지한 몫
+    const CBox B    = {real.x - EXT.topLeft.x, real.y - EXT.topLeft.y, real.width + EXT.topLeft.x + EXT.bottomRight.x,
+                       real.height + EXT.topLeft.y + EXT.bottomRight.y};
+    if (!B.copy().expand(outer).containsPoint(p))
+        return 0;
+
+    int e = 0;
+    if (!B.containsPoint(p)) { // 바깥 띠
+        if (p.x < B.x)
+            e |= 1;
+        else if (p.x >= B.x + B.width)
+            e |= 2;
+        if (p.y < B.y)
+            e |= 4;
+        else if (p.y >= B.y + B.height)
+            e |= 8;
+    } else { // 안쪽 몇 px
+        // SEKAI_BORDER_TOPONLY: 안쪽 띠는 위쪽만 (윈도우처럼 옆·아래 테두리는 창 바깥 — 창 안은 앱 몫)
+        if (p.y < B.y + SEKAI_INNER_GRAB)
+            e |= 4;
+        if (!e && real.containsPoint(p) && w->isInCurvedCorner(p.x, p.y)) // 둥근 모서리 안쪽 (원래 동작)
+            e = (p.x < real.x + real.width / 2 ? 1 : 2) | (p.y < real.y + real.height / 2 ? 4 : 8);
+        e &= ~sekaiScreenEdges(w, B); // SEKAI_BORDER_EDGE: 화면 끝에 붙은 변의 안쪽은 창 몫
+    }
+    if (!e)
+        return 0;
+    // 가장자리 끝 가까이면 모서리로
+    if (e & 12) {
+        if (p.x < B.x + SEKAI_CORNER)
+            e |= 1;
+        else if (p.x > B.x + B.width - SEKAI_CORNER)
+            e |= 2;
+    }
+    if (e & 3) {
+        if (p.y < B.y + SEKAI_CORNER)
+            e |= 4;
+        else if (p.y > B.y + B.height - SEKAI_CORNER)
+            e |= 8;
+    }
+    return e;
+}
+
 // ── SEKAI_CLIENT_MOVE: 창이 스스로 그린 제목줄(CSD) 끌기 ─────────────────
 //   XDGShell.cpp 의 move 요청에서 시작, 버튼을 떼면 끝. 스냅 이벤트는 hyprbars 패치와 같다.
 static bool         sekaiMoving    = false;
@@ -91,7 +151,8 @@ void sekaiClientMoveStart(PHLWINDOW w) {
 
 CInputManager::CInputManager() {
     m_listeners.setCursorShape = PROTO::cursorShape->m_events.setShape.listen([this](const CCursorShapeProtocol::SSetShapeEvent& event) {
-        if (!cursorImageUnlocked())
+        const bool SEKAIDEFER = m_cursorImageOverridden && m_borderIconDirection != BORDERICON_NONE && m_clickBehavior != CLICKMODE_KILL; // SEKAI_BORDER_FIX: 테두리 커서 동안이면 적어만 둔다
+        if (!cursorImageUnlocked() && !SEKAIDEFER)
             return;
 
         if (!g_pSeatManager->m_state.pointerFocusResource)
@@ -107,7 +168,9 @@ CInputManager::CInputManager() {
         m_cursorSurfaceInfo.name     = event.shapeName;
         m_cursorSurfaceInfo.hidden   = false;
 
-        m_cursorSurfaceInfo.inUse = true;
+        m_cursorSurfaceInfo.inUse = !SEKAIDEFER;
+        if (SEKAIDEFER)
+            return;
         g_pHyprRenderer->setCursorFromName(m_cursorSurfaceInfo.name);
     });
 
@@ -710,7 +773,8 @@ void CInputManager::onMouseButton(IPointer::SButtonEvent e) {
 }
 
 void CInputManager::processMouseRequest(const CSeatManager::SSetCursorEvent& event) {
-    if (!cursorImageUnlocked())
+    const bool SEKAIDEFER = m_cursorImageOverridden && m_borderIconDirection != BORDERICON_NONE && m_clickBehavior != CLICKMODE_KILL; // SEKAI_BORDER_FIX: 테두리 커서 동안이면 적어만 둔다
+    if (!cursorImageUnlocked() && !SEKAIDEFER)
         return;
 
     Debug::log(LOG, "cursorImage request: surface {:x}", (uintptr_t)event.surf.get());
@@ -732,7 +796,9 @@ void CInputManager::processMouseRequest(const CSeatManager::SSetCursorEvent& eve
 
     m_cursorSurfaceInfo.name = "";
 
-    m_cursorSurfaceInfo.inUse = true;
+    m_cursorSurfaceInfo.inUse = !SEKAIDEFER; // 미뤘으면 restoreCursorIconToApp 가 띄운다
+    if (SEKAIDEFER)
+        return;
     g_pHyprRenderer->setCursorSurface(m_cursorSurfaceInfo.wlSurface, event.hotspot.x, event.hotspot.y);
 }
 
@@ -802,6 +868,9 @@ void CInputManager::setClickMode(eClickBehaviorMode mode) {
 
 void CInputManager::processMouseDownNormal(const IPointer::SButtonEvent& e) {
 
+    if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) // SEKAI_BORDER_GRAB — 새로 누를 때마다 (Super+끌기 크기 조절은 모서리대로)
+        g_sekaiResizeAxis = 0;
+
     // notify the keybind manager
     static auto PPASSMOUSE        = CConfigValue<Hyprlang::INT>("binds:pass_mouse_when_bound");
     const auto  PASS              = g_pKeybindManager->onMouseEvent(e);
@@ -817,6 +886,18 @@ void CInputManager::processMouseDownNormal(const IPointer::SButtonEvent& e) {
     const auto mouseCoords = g_pInputManager->getMouseCoordsInternal();
     const auto w           = g_pCompositor->vectorToWindowUnified(mouseCoords, ALLOW_FLOATING | RESERVED_EXTENTS | INPUT_EXTENTS);
 
+    // SEKAI_BORDER_GRAB: 테두리를 누르면 크기 조절 — 제목줄 맨 위도 위쪽 가장자리라 제목줄보다 먼저 본다
+    if (*PRESIZEONBORDER && w && !w->isFullscreen() && !w->isX11OverrideRedirect() && !g_pSessionLockManager->isSessionLocked() && !m_lastFocusOnLS &&
+        e.state == WL_POINTER_BUTTON_STATE_PRESSED && !w->hasPopupAt(mouseCoords) && (g_pSeatManager->m_mouse.expired() || !isConstrained()) /* SEKAI_BORDER_FIX */) {
+        const int EDGE = sekaiBorderAt(w, mouseCoords, BORDER_GRAB_AREA);
+        if (EDGE) {
+            const bool H      = EDGE & 3, V = EDGE & 12;
+            g_sekaiResizeAxis = H && V ? 0 : (V ? 1 : 2); // 가장자리만 잡았으면 그 방향으로만
+            g_pKeybindManager->resizeWithBorder(e);
+            return;
+        }
+    }
+
     if (w && !m_lastFocusOnLS && !g_pSessionLockManager->isSessionLocked() && w->checkInputOnDecos(INPUT_TYPE_BUTTON, mouseCoords, e))
         return;
 
@@ -827,7 +908,7 @@ void CInputManager::processMouseDownNormal(const IPointer::SButtonEvent& e) {
             const CBox real = {w->m_realPosition->value().x, w->m_realPosition->value().y, w->m_realSize->value().x, w->m_realSize->value().y};
             const CBox grab = {real.x - BORDER_GRAB_AREA, real.y - BORDER_GRAB_AREA, real.width + 2 * BORDER_GRAB_AREA, real.height + 2 * BORDER_GRAB_AREA};
 
-            if ((grab.containsPoint(mouseCoords) && (!real.containsPoint(mouseCoords) || w->isInCurvedCorner(mouseCoords.x, mouseCoords.y))) && !w->hasPopupAt(mouseCoords)) {
+            if (false && (grab.containsPoint(mouseCoords) && (!real.containsPoint(mouseCoords) || w->isInCurvedCorner(mouseCoords.x, mouseCoords.y))) && !w->hasPopupAt(mouseCoords)) { // SEKAI_BORDER_GRAB
                 g_pKeybindManager->resizeWithBorder(e);
                 return;
             }
@@ -1855,9 +1936,10 @@ void CInputManager::releaseAllMouseButtons() {
 }
 
 void CInputManager::setCursorIconOnBorder(PHLWINDOW w) {
-    // do not override cursor icons set by mouse binds
-    if (g_pInputManager->m_currentlyDraggedWindow.expired()) {
-        m_borderIconDirection = BORDERICON_NONE;
+    // SEKAI_BORDER_GRAB: 끄는 중(마우스 바인드)일 때만 건드리지 않는다.
+    //   원래 조건이 거꾸로(expired)라 테두리 위에서 커서가 한 번도 바뀌지 않았다
+    if (!g_pInputManager->m_currentlyDraggedWindow.expired()) {
+        m_borderIconDirection = BORDERICON_NONE; // SEKAI_BORDER_FIX: 끝나면 다음 움직임에 다시 판정
         return;
     }
 
@@ -1865,77 +1947,21 @@ void CInputManager::setCursorIconOnBorder(PHLWINDOW w) {
     if (w->m_isX11 && w->isX11OverrideRedirect())
         return;
 
-    static auto PEXTENDBORDERGRAB = CConfigValue<Hyprlang::INT>("general:extend_border_grab_area");
-    const int   BORDERSIZE        = w->getRealBorderSize();
-    const int   ROUNDING          = w->rounding();
+    static auto          PEXTENDBORDERGRAB = CConfigValue<Hyprlang::INT>("general:extend_border_grab_area");
+    const auto           mouseCoords       = getMouseCoordsInternal();
+    eBorderIconDirection direction         = BORDERICON_NONE;
 
-    // give a small leeway (10 px) for corner icon
-    const auto           CORNER           = ROUNDING + BORDERSIZE + 10;
-    const auto           mouseCoords      = getMouseCoordsInternal();
-    CBox                 box              = w->getWindowMainSurfaceBox();
-    eBorderIconDirection direction        = BORDERICON_NONE;
-    CBox                 boxFullGrabInput = {box.x - *PEXTENDBORDERGRAB - BORDERSIZE, box.y - *PEXTENDBORDERGRAB - BORDERSIZE, box.width + 2 * (*PEXTENDBORDERGRAB + BORDERSIZE),
-                                             box.height + 2 * (*PEXTENDBORDERGRAB + BORDERSIZE)};
-
-    if (w->hasPopupAt(mouseCoords))
-        direction = BORDERICON_NONE;
-    else if (!boxFullGrabInput.containsPoint(mouseCoords) || (!m_currentlyHeldButtons.empty() && m_currentlyDraggedWindow.expired()))
-        direction = BORDERICON_NONE;
-    else {
-
-        bool onDeco = false;
-
-        for (auto const& wd : w->m_windowDecorations) {
-            if (!(wd->getDecorationFlags() & DECORATION_ALLOWS_MOUSE_INPUT))
-                continue;
-
-            if (g_pDecorationPositioner->getWindowDecorationBox(wd.get()).containsPoint(mouseCoords)) {
-                onDeco = true;
-                break;
-            }
-        }
-
-        if (onDeco)
-            direction = BORDERICON_NONE;
-        else {
-            if (box.containsPoint(mouseCoords)) {
-                if (!w->isInCurvedCorner(mouseCoords.x, mouseCoords.y)) {
-                    direction = BORDERICON_NONE;
-                } else {
-                    if (mouseCoords.y < box.y + CORNER) {
-                        if (mouseCoords.x < box.x + CORNER)
-                            direction = BORDERICON_UP_LEFT;
-                        else
-                            direction = BORDERICON_UP_RIGHT;
-                    } else {
-                        if (mouseCoords.x < box.x + CORNER)
-                            direction = BORDERICON_DOWN_LEFT;
-                        else
-                            direction = BORDERICON_DOWN_RIGHT;
-                    }
-                }
-            } else {
-                if (mouseCoords.y < box.y + CORNER) {
-                    if (mouseCoords.x < box.x + CORNER)
-                        direction = BORDERICON_UP_LEFT;
-                    else if (mouseCoords.x > box.x + box.width - CORNER)
-                        direction = BORDERICON_UP_RIGHT;
-                    else
-                        direction = BORDERICON_UP;
-                } else if (mouseCoords.y > box.y + box.height - CORNER) {
-                    if (mouseCoords.x < box.x + CORNER)
-                        direction = BORDERICON_DOWN_LEFT;
-                    else if (mouseCoords.x > box.x + box.width - CORNER)
-                        direction = BORDERICON_DOWN_RIGHT;
-                    else
-                        direction = BORDERICON_DOWN;
-                } else {
-                    if (mouseCoords.x < box.x + CORNER)
-                        direction = BORDERICON_LEFT;
-                    else if (mouseCoords.x > box.x + box.width - CORNER)
-                        direction = BORDERICON_RIGHT;
-                }
-            }
+    if (!w->hasPopupAt(mouseCoords) && m_currentlyHeldButtons.empty()) {
+        switch (sekaiBorderAt(w, mouseCoords, w->getRealBorderSize() + *PEXTENDBORDERGRAB)) { // 누를 때와 같은 판정
+            case 1: direction = BORDERICON_LEFT; break;
+            case 2: direction = BORDERICON_RIGHT; break;
+            case 4: direction = BORDERICON_UP; break;
+            case 8: direction = BORDERICON_DOWN; break;
+            case 5: direction = BORDERICON_UP_LEFT; break;
+            case 6: direction = BORDERICON_UP_RIGHT; break;
+            case 9: direction = BORDERICON_DOWN_LEFT; break;
+            case 10: direction = BORDERICON_DOWN_RIGHT; break;
+            default: break;
         }
     }
 
@@ -1946,14 +1972,14 @@ void CInputManager::setCursorIconOnBorder(PHLWINDOW w) {
 
     switch (direction) {
         case BORDERICON_NONE: unsetCursorImage(); break;
-        case BORDERICON_UP: setCursorImageUntilUnset("top_side"); break;
-        case BORDERICON_DOWN: setCursorImageUntilUnset("bottom_side"); break;
-        case BORDERICON_LEFT: setCursorImageUntilUnset("left_side"); break;
-        case BORDERICON_RIGHT: setCursorImageUntilUnset("right_side"); break;
-        case BORDERICON_UP_LEFT: setCursorImageUntilUnset("top_left_corner"); break;
-        case BORDERICON_DOWN_LEFT: setCursorImageUntilUnset("bottom_left_corner"); break;
-        case BORDERICON_UP_RIGHT: setCursorImageUntilUnset("top_right_corner"); break;
-        case BORDERICON_DOWN_RIGHT: setCursorImageUntilUnset("bottom_right_corner"); break;
+        case BORDERICON_UP: setCursorImageUntilUnset("ns-resize"); break;
+        case BORDERICON_DOWN: setCursorImageUntilUnset("ns-resize"); break;
+        case BORDERICON_LEFT: setCursorImageUntilUnset("ew-resize"); break;
+        case BORDERICON_RIGHT: setCursorImageUntilUnset("ew-resize"); break;
+        case BORDERICON_UP_LEFT: setCursorImageUntilUnset("nwse-resize"); break;
+        case BORDERICON_DOWN_LEFT: setCursorImageUntilUnset("nesw-resize"); break;
+        case BORDERICON_UP_RIGHT: setCursorImageUntilUnset("nesw-resize"); break;
+        case BORDERICON_DOWN_RIGHT: setCursorImageUntilUnset("nwse-resize"); break;
     }
 }
 

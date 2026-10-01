@@ -1,4 +1,5 @@
 #include "IHyprLayout.hpp"
+extern int g_sekaiResizeAxis; // SEKAI_BORDER_GRAB (InputManager.cpp) — 1 세로만 · 2 가로만
 #include "../defines.hpp"
 #include "../Compositor.hpp"
 #include "../render/decorations/CHyprGroupBarDecoration.hpp"
@@ -261,38 +262,44 @@ void IHyprLayout::onBeginDragWindow() {
         switch (*RESIZECORNER) {
             case 1:
                 m_grabbedCorner = CORNER_TOPLEFT;
-                g_pInputManager->setCursorImageUntilUnset("nw-resize");
+                g_pInputManager->setCursorImageUntilUnset("nwse-resize");
                 break;
             case 2:
                 m_grabbedCorner = CORNER_TOPRIGHT;
-                g_pInputManager->setCursorImageUntilUnset("ne-resize");
+                g_pInputManager->setCursorImageUntilUnset("nesw-resize");
                 break;
             case 3:
                 m_grabbedCorner = CORNER_BOTTOMRIGHT;
-                g_pInputManager->setCursorImageUntilUnset("se-resize");
+                g_pInputManager->setCursorImageUntilUnset("nwse-resize");
                 break;
             case 4:
                 m_grabbedCorner = CORNER_BOTTOMLEFT;
-                g_pInputManager->setCursorImageUntilUnset("sw-resize");
+                g_pInputManager->setCursorImageUntilUnset("nesw-resize");
                 break;
         }
     } else if (m_beginDragXY.x < m_beginDragPositionXY.x + m_beginDragSizeXY.x / 2.0) {
         if (m_beginDragXY.y < m_beginDragPositionXY.y + m_beginDragSizeXY.y / 2.0) {
             m_grabbedCorner = CORNER_TOPLEFT;
-            g_pInputManager->setCursorImageUntilUnset("nw-resize");
+            g_pInputManager->setCursorImageUntilUnset("nwse-resize");
         } else {
             m_grabbedCorner = CORNER_BOTTOMLEFT;
-            g_pInputManager->setCursorImageUntilUnset("sw-resize");
+            g_pInputManager->setCursorImageUntilUnset("nesw-resize");
         }
     } else {
         if (m_beginDragXY.y < m_beginDragPositionXY.y + m_beginDragSizeXY.y / 2.0) {
             m_grabbedCorner = CORNER_TOPRIGHT;
-            g_pInputManager->setCursorImageUntilUnset("ne-resize");
+            g_pInputManager->setCursorImageUntilUnset("nesw-resize");
         } else {
             m_grabbedCorner = CORNER_BOTTOMRIGHT;
-            g_pInputManager->setCursorImageUntilUnset("se-resize");
+            g_pInputManager->setCursorImageUntilUnset("nwse-resize");
         }
     }
+
+    // SEKAI_BORDER_GRAB: 가장자리를 잡았으면 한 방향 화살표
+    if (g_pInputManager->m_dragMode == MBIND_RESIZE && g_sekaiResizeAxis == 1)
+        g_pInputManager->setCursorImageUntilUnset(m_grabbedCorner & (CORNER_TOPLEFT | CORNER_TOPRIGHT) ? "ns-resize" : "ns-resize");
+    else if (g_pInputManager->m_dragMode == MBIND_RESIZE && g_sekaiResizeAxis == 2)
+        g_pInputManager->setCursorImageUntilUnset(m_grabbedCorner & (CORNER_TOPLEFT | CORNER_BOTTOMLEFT) ? "ew-resize" : "ew-resize");
 
     if (g_pInputManager->m_dragMode != MBIND_RESIZE && g_pInputManager->m_dragMode != MBIND_RESIZE_FORCE_RATIO && g_pInputManager->m_dragMode != MBIND_RESIZE_BLOCK_RATIO)
         g_pInputManager->setCursorImageUntilUnset("grabbing");
@@ -651,14 +658,21 @@ void IHyprLayout::onMouseMove(const Vector2D& mousePos) {
             Vector2D newSize = m_beginDragSizeXY;
             Vector2D newPos  = m_beginDragPositionXY;
 
+            // SEKAI_BORDER_GRAB: 가장자리를 잡았으면 그 방향으로만
+            Vector2D SDELTA = DELTA;
+            if (g_sekaiResizeAxis == 1)
+                SDELTA.x = 0;
+            else if (g_sekaiResizeAxis == 2)
+                SDELTA.y = 0;
+
             if (m_grabbedCorner == CORNER_BOTTOMRIGHT)
-                newSize = newSize + DELTA;
+                newSize = newSize + SDELTA;
             else if (m_grabbedCorner == CORNER_TOPLEFT)
-                newSize = newSize - DELTA;
+                newSize = newSize - SDELTA;
             else if (m_grabbedCorner == CORNER_TOPRIGHT)
-                newSize = newSize + Vector2D(DELTA.x, -DELTA.y);
+                newSize = newSize + Vector2D(SDELTA.x, -SDELTA.y);
             else if (m_grabbedCorner == CORNER_BOTTOMLEFT)
-                newSize = newSize + Vector2D(-DELTA.x, DELTA.y);
+                newSize = newSize + Vector2D(-SDELTA.x, SDELTA.y);
 
             eMouseBindMode mode = g_pInputManager->m_dragMode;
             if (DRAGGINGWINDOW->m_windowData.keepAspectRatio.valueOrDefault() && mode != MBIND_RESIZE_BLOCK_RATIO)

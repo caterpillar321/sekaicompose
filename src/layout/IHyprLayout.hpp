@@ -219,6 +219,7 @@ class IHyprLayout {
 
   private:
     int          m_mouseMoveEventCount;
+    bool         m_sekaiForceDragUpdate = false; // SEKAI_DRAG_FINAL: 놓는 순간엔 건너뛰지 않고 마지막 자리를 반영
     Vector2D     m_beginDragXY;
     Vector2D     m_lastDragXY;
     Vector2D     m_beginDragPositionXY;

@@ -312,6 +312,39 @@ void IHyprLayout::onBeginDragWindow() {
     g_pCompositor->changeWindowZOrder(DRAGGINGWINDOW, true);
 }
 
+// SEKAI_DRAG_KEEP_TITLE: 놓은 떠 있는 창의 제목줄이 작업 영역(작업 표시줄 뺀 곳) 안에 보이게 한다 (윈도우처럼).
+//   화면 맨 아래까지 끌어 놓으면 창이 화면 밖으로 사라져 마우스로는 다시 잡을 수 없었고,
+//   최대화했다 복원할 때마다 그 자리로 돌아갔다. 위아래는 제목줄 전체, 옆은 100px 이 보이게.
+static void sekaiKeepTitleReachable(PHLWINDOW w) {
+    const auto MON = w->m_monitor.lock();
+    if (!MON)
+        return;
+    const auto     RES   = w->getFullWindowReservedArea();
+    const Vector2D POS   = w->m_realPosition->goal();
+    const Vector2D SIZE  = w->m_realSize->goal();
+    const double   WX    = MON->m_position.x + MON->m_reservedTopLeft.x;
+    const double   WY    = MON->m_position.y + MON->m_reservedTopLeft.y;
+    const double   WR    = MON->m_position.x + MON->m_size.x - MON->m_reservedBottomRight.x;
+    const double   WB    = MON->m_position.y + MON->m_size.y - MON->m_reservedBottomRight.y;
+    const double   BAR   = std::max(RES.topLeft.y, 24.0); // 제목줄 (막대 없이 스스로 그리는 창은 위 24px)
+    const double   SHOWX = std::min(100.0, SIZE.x);
+    Vector2D       np    = POS;
+    if (np.y - RES.topLeft.y < WY)
+        np.y = WY + RES.topLeft.y;
+    if (np.y - RES.topLeft.y + BAR > WB)
+        np.y = WB - BAR + RES.topLeft.y;
+    if (np.x + SIZE.x < WX + SHOWX)
+        np.x = WX + SHOWX - SIZE.x;
+    if (np.x > WR - SHOWX)
+        np.x = WR - SHOWX;
+    if (np == POS)
+        return;
+    Debug::log(LOG, "[sekai] 놓은 창의 제목줄을 화면 안으로: {} -> {}", POS, np);
+    *w->m_realPosition = np;
+    w->m_position      = np;
+    w->sendWindowSize();
+}
+
 void IHyprLayout::onEndDragWindow() {
     const auto DRAGGINGWINDOW = g_pInputManager->m_currentlyDraggedWindow.lock();
 
@@ -324,6 +357,14 @@ void IHyprLayout::onEndDragWindow() {
         }
         return;
     }
+
+    // SEKAI_DRAG_FINAL: 마지막 커서 자리를 한 번 더 — 화면 갱신 주기보다 촘촘한 움직임은 건너뛰는데(onMouseMove),
+    //   놓기 직전 것이 건너뛰어지면 빠르게 크기를 바꾼 창이 커서보다 수십 px 모자란 채 끝났다
+    m_sekaiForceDragUpdate = true;
+    onMouseMove(g_pInputManager->getMouseCoordsInternal());
+    m_sekaiForceDragUpdate = false;
+    if (g_pInputManager->m_dragMode == MBIND_MOVE && DRAGGINGWINDOW->m_isFloating && !DRAGGINGWINDOW->isFullscreen())
+        sekaiKeepTitleReachable(DRAGGINGWINDOW);
 
     g_pInputManager->unsetCursorImage();
     g_pInputManager->m_currentlyDraggedWindow.reset();
@@ -617,7 +658,8 @@ void IHyprLayout::onMouseMove(const Vector2D& mousePos) {
         canSkipUpdate = std::clamp(MSMONITOR - TIMERDELTA, 0.0, MSMONITOR) > totalMs * 1.0 / m_mouseMoveEventCount;
     }
 
-    if ((abs(TICKDELTA.x) < 1.f && abs(TICKDELTA.y) < 1.f) || (TIMERDELTA < MSMONITOR && canSkipUpdate && (g_pInputManager->m_dragMode != MBIND_MOVE || *PANIMATEMOUSE)))
+    if ((abs(TICKDELTA.x) < 1.f && abs(TICKDELTA.y) < 1.f) ||
+        (!m_sekaiForceDragUpdate && TIMERDELTA < MSMONITOR && canSkipUpdate && (g_pInputManager->m_dragMode != MBIND_MOVE || *PANIMATEMOUSE)))
         return;
 
     TIMER = std::chrono::high_resolution_clock::now();

@@ -2403,6 +2403,11 @@ void CCompositor::setWindowFullscreenState(const PHLWINDOW PWINDOW, SFullscreenS
 
     updateFullscreenFadeOnWorkspace(PWORKSPACE);
 
+    // SEKAI_MISCLICK: 최대화·전체 화면한 창을 맨 위로 한 번 더 — SEKAI_RAISE 가 그 창의 대화상자를 함께
+    //   올린다 (안 그러면 위에서 모두 내린 창에 대화상자도 들어가 숨었다)
+    if (EFFECTIVE_MODE != FSMODE_NONE)
+        changeWindowZOrder(PWINDOW, true);
+
     PWINDOW->sendWindowSize(true);
 
     PWORKSPACE->forceReportSizesToWindows();

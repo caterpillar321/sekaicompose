@@ -134,6 +134,11 @@ static std::string  sekaiMoveZoneAt(const Vector2D& p, PHLMONITOR& mon) {
 void sekaiClientMoveStart(PHLWINDOW w) {
     if (!w || sekaiMoving || !sekaiButtonHeld || !g_pInputManager->m_currentlyDraggedWindow.expired())
         return;
+    // SEKAI_MISCLICK: 커서 밑이 이 창이 아니면(빠르게 튕겨 이미 다른 창 위) 시작하지 않는다 — 다른 창을
+    //   잡았다 되돌리면서 그 창의 초점·올림이 남았다
+    if (!validMapped(w) || g_pCompositor->vectorToWindowUnified(g_pInputManager->getMouseCoordsInternal(),
+                                                               RESERVED_EXTENTS | INPUT_EXTENTS | ALLOW_FLOATING) != w)
+        return;
     g_pKeybindManager->m_dispatchers["mouse"]("1movewindow");
     if (g_pInputManager->m_currentlyDraggedWindow.lock() != w) { // 커서 밑이 다른 창이었다 — 되돌린다
         g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
@@ -733,8 +738,8 @@ void CInputManager::mouseMoveUnified(uint32_t time, bool refocus, bool mouse) {
 }
 
 void CInputManager::onMouseButton(IPointer::SButtonEvent e) {
-    EMIT_HOOK_EVENT_CANCELLABLE("mouseButton", e);
-
+    // SEKAI_MISCLICK: 창이 그린 제목줄 끌기의 놓기는 훅보다 먼저 — 작업 보기(hyprexpo) 등이 버튼 이벤트를
+    //   취소하면 놓기가 사라져 창이 버튼 없이 커서를 따라다녔다
     if (sekaiMoving && e.state != WL_POINTER_BUTTON_STATE_PRESSED) { // SEKAI_CLIENT_MOVE — 놓음
         sekaiMoving = false;
         g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
@@ -747,12 +752,24 @@ void CInputManager::onMouseButton(IPointer::SButtonEvent e) {
         sekaiMoveZone = "none";
     }
 
+    EMIT_HOOK_EVENT_CANCELLABLE("mouseButton", e);
+
+
     if (e.mouse)
         recheckMouseWarpOnMouseInput();
 
     m_lastCursorMovement.reset();
 
     if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        // SEKAI_MISCLICK_DRAG: 버튼이 하나도 안 눌려 있었는데 끌기가 남아 있다 — 놓기를 놓쳤다(끄는 중 마우스 연결이
+        //   끊김 등). 그대로 두면 Hyprland 가 새 끌기를 모두 조용히 거절해, 다시 로그인할 때까지 창을 옮길 수 없었다
+        if (m_currentlyHeldButtons.empty() && (m_dragMode != MBIND_INVALID || !m_currentlyDraggedWindow.expired())) {
+            g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+            if (sekaiMoving) {
+                sekaiMoving = false;
+                g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", "none,,0"});
+            }
+        }
         m_currentlyHeldButtons.push_back(e.button);
     } else {
         if (std::ranges::find_if(m_currentlyHeldButtons, [&](const auto& other) { return other == e.button; }) == m_currentlyHeldButtons.end())
@@ -931,8 +948,14 @@ void CInputManager::processMouseDownNormal(const IPointer::SButtonEvent& e) {
             if (!w && *PFOLLOWMOUSE == 2) {
                 const auto PSURF = g_pSeatManager->m_state.pointerFocus.lock();
                 const auto PLS   = PSURF ? g_pCompositor->getLayerSurfaceFromSurface(PSURF) : nullptr;
-                if (PLS && PLS->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE && g_pSeatManager->m_state.keyboardFocus != PSURF)
-                    g_pCompositor->focusSurface(PSURF);
+                if (PLS && PLS->m_layerSurface->m_current.interactivity != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
+                    // SEKAI_MISCLICK: 바탕화면을 누르면 어느 창도 활성이 아니다 (윈도우처럼) — 안 그러면 작업 표시줄
+                    //   단추가 그 창을 최소화하고, Alt+F4 가 보이지 않는 그 창을 닫았다
+                    if (!g_pCompositor->m_lastWindow.expired())
+                        g_pCompositor->focusWindow(nullptr);
+                    if (g_pSeatManager->m_state.keyboardFocus != PSURF)
+                        g_pCompositor->focusSurface(PSURF);
+                }
             }
 
             // SEKAI_LAYER_FOCUS: 누른 창이 마지막 창이어도 키보드가 레이어(바탕화면 등)에 가 있으면 다시 초점

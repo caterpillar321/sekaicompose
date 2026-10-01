@@ -474,7 +474,7 @@ PHLWINDOW CWindow::x11TransientFor() {
 
     auto                              s = m_xwaylandSurface->m_parent;
     std::vector<SP<CXWaylandSurface>> visited;
-    while (s) {
+    while (s && s->m_parent) { // SEKAI_MISCLICK: 맨 위 조상에서 멈춘다 (null 까지 가면 엉뚱한 Wayland 창을 돌려줬다)
         // break loops. Some X apps make them, and it seems like it's valid behavior?!?!?!
         // TODO: we should reject loops being created in the first place.
         if (std::ranges::find(visited.begin(), visited.end(), s) != visited.end())

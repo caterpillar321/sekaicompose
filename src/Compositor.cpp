@@ -2337,6 +2337,9 @@ void CCompositor::setWindowFullscreenState(const PHLWINDOW PWINDOW, SFullscreenS
 
     PWINDOW->m_fullscreenState.client = state.client;
     g_pXWaylandManager->setWindowFullscreen(PWINDOW, state.client & FSMODE_FULLSCREEN);
+    // SEKAI_TRUE_MAXIMIZED: 앱에 알리는 최대화 상태를 실제와 같게 (크롬의 최대화·복원 단추가 맞게 움직인다)
+    if (PWINDOW->m_xdgSurface && PWINDOW->m_xdgSurface->m_toplevel)
+        PWINDOW->m_xdgSurface->m_toplevel->setMaximized(state.client & FSMODE_MAXIMIZED);
 
     if (!CHANGEINTERNAL) {
         PWINDOW->updateDynamicRules();

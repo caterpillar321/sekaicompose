@@ -400,9 +400,8 @@ CXDGSurfaceResource::CXDGSurfaceResource(SP<CXdgSurface> resource_, SP<CXDGWMBas
         }
 
         if (m_surface->m_current.texture && !m_mapped) {
-            // this forces apps to not draw CSD.
-            if (m_toplevel)
-                m_toplevel->setMaximized(true);
+            // SEKAI_TRUE_MAXIMIZED: 나타날 때 모든 창에 "최대화됨"을 붙이지 않는다 — 최대화 상태는
+            //   CCompositor::setWindowFullscreenState 가 실제 값으로 알린다 (그림자·둥근 모서리는 "네 변 타일"이 막는다)
 
             m_mapped = true;
             m_surface->map();

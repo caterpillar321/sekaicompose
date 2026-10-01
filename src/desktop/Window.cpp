@@ -1424,6 +1424,24 @@ void CWindow::activate(bool force) {
     warpCursor();
 }
 
+// SEKAI_INITIAL_MAXIMIZE: 나타나기 전에 최대화를 청한 창들 (약한 참조 — 나타나기 전에 닫혀도 남지 않는다)
+static std::vector<PHLWINDOWREF> sekaiWantsInitialMax;
+
+bool sekaiTakeInitialMaximize(PHLWINDOW w) { // events/Windows.cpp mapWindow 이 부른다
+    bool found = false;
+    std::erase_if(sekaiWantsInitialMax, [&](const PHLWINDOWREF& r) {
+        const auto L = r.lock();
+        if (!L)
+            return true;
+        if (L == w) {
+            found = true;
+            return true;
+        }
+        return false;
+    });
+    return found;
+}
+
 void CWindow::onUpdateState() {
     std::optional<bool>      requestsFS = m_xdgSurface ? m_xdgSurface->m_toplevel->m_state.requestsFullscreen : m_xwaylandSurface->m_state.requestsFullscreen;
     std::optional<MONITORID> requestsID = m_xdgSurface ? m_xdgSurface->m_toplevel->m_state.requestsFullscreenMonitor : MONITOR_INVALID;
@@ -1452,6 +1470,12 @@ void CWindow::onUpdateState() {
     if (requestsMX.has_value() && !(m_suppressedEvents & SUPPRESS_MAXIMIZE)) {
         if (m_isMapped)
             g_pCompositor->changeWindowFullscreenModeClient(m_self.lock(), FSMODE_MAXIMIZED, requestsMX.value());
+        else { // SEKAI_INITIAL_MAXIMIZE: 나타날 때 쓰게 적어 둔다 (요청 값은 이 함수가 끝나면 지워진다)
+            const auto SELF = m_self.lock();
+            sekaiTakeInitialMaximize(SELF); // 앞선 요청은 지우고
+            if (requestsMX.value())
+                sekaiWantsInitialMax.emplace_back(m_self);
+        }
     }
 }
 

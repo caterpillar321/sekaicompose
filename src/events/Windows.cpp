@@ -1,4 +1,5 @@
 #include "Events.hpp"
+bool sekaiTakeInitialMaximize(PHLWINDOW w); // SEKAI_INITIAL_MAXIMIZE (desktop/Window.cpp)
 
 #include "../Compositor.hpp"
 #include "../helpers/WLClasses.hpp"
@@ -138,6 +139,9 @@ void Events::listener_mapWindow(void* owner, void* data) {
     std::optional<SFullscreenState> requestedFSState;
     if (PWINDOW->m_wantsInitialFullscreen || (PWINDOW->m_isX11 && PWINDOW->m_xwaylandSurface->m_fullscreen))
         requestedClientFSMode = FSMODE_FULLSCREEN;
+    // SEKAI_INITIAL_MAXIMIZE: 나타나기 전에 최대화를 청했으면 최대화로 연다 (크롬을 최대화한 채 닫았으면 다음에도)
+    if (sekaiTakeInitialMaximize(PWINDOW) && !requestedClientFSMode.has_value())
+        requestedClientFSMode = FSMODE_MAXIMIZED;
     MONITORID requestedFSMonitor = PWINDOW->m_wantsInitialFullscreenMonitor;
 
     for (auto const& r : PWINDOW->m_matchedRules) {

@@ -13,6 +13,59 @@
 #include <pango/pangocairo.h>
 
 #include "globals.hpp"
+#include <hyprland/src/managers/EventManager.hpp>
+
+// ── SEKAI_SNAP: 끌어서 스냅 ─────────────────────────────────────
+static std::string sekaiZone = "none";
+
+static std::string sekaiZoneAt(const Vector2D& p, PHLMONITOR& mon) {
+    mon = g_pCompositor->getMonitorFromVector(p);
+    if (!mon)
+        return "none";
+    const double x = p.x - mon->m_position.x, y = p.y - mon->m_position.y;
+    const double W = mon->m_size.x, H = mon->m_size.y;
+    const double E = 4;                                  // 가장자리로 치는 두께
+    const double C = std::max(48.0, std::min(W, H) / 8); // 모서리로 치는 길이
+    const bool   L = x <= E, R = x >= W - 1 - E, T = y <= E, B = y >= H - 1 - E;
+    if ((L && y < C) || (T && x < C))
+        return "tl";
+    if ((R && y < C) || (T && x > W - C))
+        return "tr";
+    if ((L && y > H - C) || (B && x < C))
+        return "bl";
+    if ((R && y > H - C) || (B && x > W - C))
+        return "br";
+    if (L)
+        return "left";
+    if (R)
+        return "right";
+    if (T)
+        return "max";
+    return "none";
+}
+
+static void sekaiSnapTrack() {
+    PHLMONITOR mon;
+    const auto z = sekaiZoneAt(g_pInputManager->getMouseCoordsInternal(), mon);
+    if (z == sekaiZone)
+        return;
+    sekaiZone = z;
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnap", std::format("{},{}", z, mon ? mon->m_name : "")});
+}
+
+static void sekaiSnapDrop(PHLWINDOW w) {
+    PHLMONITOR mon;
+    const auto z = sekaiZoneAt(g_pInputManager->getMouseCoordsInternal(), mon);
+    sekaiZone    = "none";
+    if (!w)
+        return;
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", std::format("{},{},{:x}", z, mon ? mon->m_name : "", (uintptr_t)w.get())});
+}
+
+static void sekaiSnapCancel() { // SEKAI_SNAP_GONE: 끄던 창이 없어졌다 — 셸이 끌기를 끝내게
+    sekaiZone = "none";
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", "none,,0"});
+}
 #include "BarPassElement.hpp"
 
 CHyprBar::CHyprBar(PHLWINDOW pWindow) : IHyprWindowDecoration(pWindow) {
@@ -45,6 +98,8 @@ CHyprBar::CHyprBar(PHLWINDOW pWindow) : IHyprWindowDecoration(pWindow) {
 }
 
 CHyprBar::~CHyprBar() {
+    if (m_bDraggingThis) // SEKAI_SNAP_GONE
+        sekaiSnapCancel();
     HyprlandAPI::unregisterCallback(PHANDLE, m_pMouseButtonCallback);
     HyprlandAPI::unregisterCallback(PHANDLE, m_pTouchDownCallback);
     HyprlandAPI::unregisterCallback(PHANDLE, m_pTouchUpCallback);
@@ -114,6 +169,11 @@ bool CHyprBar::inputIsValid() {
 }
 
 void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
+    if (e.state != WL_POINTER_BUTTON_STATE_PRESSED && m_bDraggingThis) { // SEKAI_SNAP_DROP
+        handleUpEvent(info);
+        return;
+    }
+
     if (!inputIsValid())
         return;
 
@@ -141,6 +201,9 @@ void CHyprBar::onMouseMove(Vector2D coords) {
     static auto* const PICONONHOVER = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:icon_on_hover")->getDataStaticPtr();
     (void)PICONONHOVER;
     damageOnButtonHover(); // SEKAI_BUTTON_HOVER — 배경 효과를 위해 언제나
+
+    if (m_bDraggingThis && !m_bTouchEv) // SEKAI_SNAP
+        sekaiSnapTrack();
 
     if (!m_bDragPending || m_bTouchEv || !validMapped(m_pWindow))
         return;
@@ -214,8 +277,15 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
 }
 
 void CHyprBar::handleUpEvent(SCallbackInfo& info) {
-    if (m_pWindow.lock() != g_pCompositor->m_lastWindow.lock())
+    if (m_pWindow.lock() != g_pCompositor->m_lastWindow.lock()) {
+        if (m_bDraggingThis) { // SEKAI_SNAP_GONE: 초점이 옮겨 가(창이 닫힘) 놓음이 여기서 끝났다
+            g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
+            m_bDraggingThis = false;
+            m_bDragPending  = false;
+            sekaiSnapCancel();
+        }
         return;
+    }
 
     if (m_bCancelledDown)
         info.cancelled = true;
@@ -225,6 +295,7 @@ void CHyprBar::handleUpEvent(SCallbackInfo& info) {
     if (m_bDraggingThis) {
         g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
         m_bDraggingThis = false;
+        sekaiSnapDrop(m_pWindow.lock()); // SEKAI_SNAP
 
         Debug::log(LOG, "[hyprbars] Dragging ended on {:x}", (uintptr_t)m_pWindow.lock().get());
     }
@@ -236,6 +307,8 @@ void CHyprBar::handleUpEvent(SCallbackInfo& info) {
 void CHyprBar::handleMovement() {
     g_pKeybindManager->m_dispatchers["mouse"]("1movewindow");
     m_bDraggingThis = true;
+    sekaiZone       = "none"; // SEKAI_SNAP
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapstart", std::format("{:x}", (uintptr_t)m_pWindow.lock().get())});
     Debug::log(LOG, "[hyprbars] Dragging initiated on {:x}", (uintptr_t)m_pWindow.lock().get());
     return;
 }
@@ -817,6 +890,15 @@ void CHyprBar::damageOnButtonHover() {
         if (hover != WAS) { // SEKAI_BUTTON_HOVER
             if (IDX < 32)
                 m_iSekaiHover ^= (1u << IDX);
+            if (b.icon == "sekai:max" && !m_bDraggingThis) { // SEKAI_SNAP_LAYOUT 스냅 레이아웃
+                const auto BOX = assignedBoxGlobal();
+                const auto PW  = m_pWindow.lock();
+                if (hover)
+                    g_pEventManager->postEvent(SHyprIPCEvent{"sekaimaxhover", std::format("on,{:x},{},{}", (uintptr_t)PW.get(),
+                                                                                           (int)(BOX.x + currentPos.x + b.size / 2.0), (int)(BOX.y + **PHEIGHT))});
+                else
+                    g_pEventManager->postEvent(SHyprIPCEvent{"sekaimaxhover", std::format("off,{:x}", (uintptr_t)PW.get())});
+            }
             m_bButtonHovered = hover;
             damageEntire();
         }

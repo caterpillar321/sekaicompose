@@ -300,7 +300,8 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
         return;
     }
 
-    if (g_pCompositor->m_lastWindow.lock() != PWINDOW)
+    // SEKAI_BAR_FOCUS: 마지막 창이어도 키보드가 레이어(바탕화면 등)에 가 있으면 다시 초점
+    if (g_pCompositor->m_lastWindow.lock() != PWINDOW || g_pCompositor->getLayerSurfaceFromSurface(g_pSeatManager->m_state.keyboardFocus.lock()))
         g_pCompositor->focusWindow(PWINDOW);
 
     if (PWINDOW->m_isFloating)

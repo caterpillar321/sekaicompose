@@ -37,6 +37,32 @@ using namespace Hyprutils::Animation;
 //                                                              //
 // ------------------------------------------------------------ //
 
+// SEKAI_FIT_NEW: 새로 뜬 떠 있는 창을 작업 영역 안으로 — 크면 줄이고(가운데는 그대로), 제목줄이 먼저 보이게
+static void sekaiFitNewWindow(PHLWINDOW w) {
+    const auto M = w->m_monitor.lock();
+    if (!M)
+        return;
+    const auto     EXT  = w->getFullWindowReservedArea(); // 제목줄 등 장식 몫
+    const double   WX   = M->m_position.x + M->m_reservedTopLeft.x, WY = M->m_position.y + M->m_reservedTopLeft.y;
+    const double   WW   = M->m_size.x - M->m_reservedTopLeft.x - M->m_reservedBottomRight.x;
+    const double   WH   = M->m_size.y - M->m_reservedTopLeft.y - M->m_reservedBottomRight.y;
+    const Vector2D SIZE = w->m_realSize->goal(), POS = w->m_realPosition->goal();
+    if (POS == M->m_position && SIZE == M->m_size) // 모니터를 꽉 채운 창 (테두리 없는 전체 화면 게임 등)
+        return;
+    const auto     MINS = w->requestedMinSize();
+    const Vector2D NS   = {std::min(SIZE.x, std::max(WW - EXT.topLeft.x - EXT.bottomRight.x, MINS.x)),
+                           std::min(SIZE.y, std::max(WH - EXT.topLeft.y - EXT.bottomRight.y, MINS.y))};
+    Vector2D       NP   = POS + (SIZE - NS) / 2.0;
+    NP.x                = std::max(std::min(NP.x, WX + WW - EXT.bottomRight.x - NS.x), WX + EXT.topLeft.x);
+    NP.y                = std::max(std::min(NP.y, WY + WH - EXT.bottomRight.y - NS.y), WY + EXT.topLeft.y);
+    if (NS == SIZE && NP == POS)
+        return;
+    Debug::log(LOG, "SEKAI_FIT_NEW: {} {} {} -> {} {}", w, POS, SIZE, NP, NS);
+    w->m_realSize->setValueAndWarp(NS);
+    w->m_realPosition->setValueAndWarp(NP);
+    w->sendWindowSize(true);
+}
+
 static void setVector2DAnimToMove(WP<CBaseAnimatedVariable> pav) {
     const auto PAV = pav.lock();
     if (!PAV)
@@ -691,6 +717,10 @@ void Events::listener_mapWindow(void* owner, void* data) {
     g_pDecorationPositioner->forceRecalcFor(PWINDOW);
     PWINDOW->updateWindowDecos();
     g_pLayoutManager->getCurrentLayout()->recalculateWindow(PWINDOW);
+
+    // SEKAI_FIT_NEW: 떠 있는 새 창을 작업 영역 안으로 (제목줄이 붙은 뒤 — 그 몫까지)
+    if (PWINDOW->m_isFloating && !PWINDOW->isFullscreen() && !PWINDOW->isX11OverrideRedirect() && !PWINDOW->m_X11DoesntWantBorders)
+        sekaiFitNewWindow(PWINDOW);
 
     // do animations
     g_pAnimationManager->onWindowPostCreateClose(PWINDOW, false);

@@ -533,11 +533,9 @@ void CCompositor::cleanup() {
     m_workspaces.clear();
     m_windows.clear();
 
+    // SEKAI_KEEP_OUTPUTS: 출력을 끄지 않는다 — 다음 화면(사용자 세션·로그인 화면)이 끊김 없이 넘겨받게
     for (auto const& m : m_monitors) {
         g_pHyprOpenGL->destroyMonitorResources(m);
-
-        m->m_output->state->setEnabled(false);
-        m->m_state.commit();
     }
 
     g_pXWayland.reset();

@@ -61,6 +61,7 @@ class CHyprBar : public IHyprWindowDecoration {
     bool                      m_hidden             = false;
     bool                      m_bTitleColorChanged = false;
     bool                      m_bButtonHovered     = false;
+    uint32_t                  m_iSekaiHover = 0; // SEKAI_BUTTON_HOVER
     bool                      m_bLastEnabledState  = false;
     bool                      m_bWindowHasFocus    = false;
     std::optional<CHyprColor> m_bForcedBarColor;

@@ -139,8 +139,8 @@ void CHyprBar::onTouchDown(SCallbackInfo& info, ITouch::SDownEvent e) {
 void CHyprBar::onMouseMove(Vector2D coords) {
     // ensure proper redraws of button icons on hover when using hardware cursors
     static auto* const PICONONHOVER = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:icon_on_hover")->getDataStaticPtr();
-    if (**PICONONHOVER)
-        damageOnButtonHover();
+    (void)PICONONHOVER;
+    damageOnButtonHover(); // SEKAI_BUTTON_HOVER — 배경 효과를 위해 언제나
 
     if (!m_bDragPending || m_bTouchEv || !validMapped(m_pWindow))
         return;
@@ -550,6 +550,15 @@ void CHyprBar::renderBarButtonsText(CBox* barBox, const float scale, const float
         CBox pos = {barBox->x + (BUTTONSRIGHT ? barBox->width - offset - scaledButtonSize : offset), barBox->y + (barBox->height - scaledButtonSize) / 2.0, scaledButtonSize,
                     scaledButtonSize};
 
+        if (hovering) { // SEKAI_BUTTON_HOVER
+            const double INSETY = std::round(4.0 * scale);
+            const double PADX   = std::round(scaledButtonsPad / 2.0 - 2.0 * scale);
+            CBox         bg     = {pos.x - PADX, barBox->y + INSETY, pos.w + PADX * 2, barBox->height - INSETY * 2};
+            CHyprColor   hc     = button.icon == "sekai:close" ? CHyprColor(0xc4 / 255.0, 0x2b / 255.0, 0x1c / 255.0, 1.0) : CHyprColor(1.0, 1.0, 1.0, 0.10);
+            hc.a *= a;
+            g_pHyprOpenGL->renderRect(bg.round(), hc, (int)std::round(6.0 * scale), 2.0f);
+        }
+
         if (!**PICONONHOVER || (**PICONONHOVER && m_iButtonHoverState > 0))
             g_pHyprOpenGL->renderTexture(button.iconTex, pos, a);
         offset += scaledButtonsPad + scaledButtonSize;
@@ -803,7 +812,11 @@ void CHyprBar::damageOnButtonHover() {
 
         bool       hover = VECINRECT(COORDS, currentPos.x, currentPos.y, currentPos.x + b.size + **PBARBUTTONPADDING, currentPos.y + b.size);
 
-        if (hover != m_bButtonHovered) {
+        const size_t IDX = &b - &g_pGlobalState->buttons[0];
+        const bool   WAS = IDX < 32 && (m_iSekaiHover & (1u << IDX));
+        if (hover != WAS) { // SEKAI_BUTTON_HOVER
+            if (IDX < 32)
+                m_iSekaiHover ^= (1u << IDX);
             m_bButtonHovered = hover;
             damageEntire();
         }

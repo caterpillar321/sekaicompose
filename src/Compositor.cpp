@@ -2376,6 +2376,14 @@ void CCompositor::setWindowFullscreenState(const PHLWINDOW PWINDOW, SFullscreenS
     const eFullscreenMode CURRENT_EFFECTIVE_MODE = (eFullscreenMode)std::bit_floor((uint8_t)PWINDOW->m_fullscreenState.internal);
     const eFullscreenMode EFFECTIVE_MODE         = (eFullscreenMode)std::bit_floor((uint8_t)state.internal);
 
+    // SEKAI_FIXED_SIZE: 크기를 바꿀 수 없는 창은 최대화하지 않는다 (단추·두 번 누르기·Win+↑·앱의 요청 모두 여기로 온다)
+    if (EFFECTIVE_MODE == FSMODE_MAXIMIZED && CURRENT_EFFECTIVE_MODE == FSMODE_NONE && PWINDOW->sekaiFixedSize()) {
+        Debug::log(LOG, "[sekai] 크기 고정 창은 최대화하지 않는다: {}", PWINDOW);
+        if (PWINDOW->m_xdgSurface && PWINDOW->m_xdgSurface->m_toplevel)
+            PWINDOW->m_xdgSurface->m_toplevel->setMaximized(false); // 요청한 앱에 "안 됐다"고 알린다
+        return;
+    }
+
     if (PWINDOW->m_isFloating && CURRENT_EFFECTIVE_MODE == FSMODE_NONE && EFFECTIVE_MODE != FSMODE_NONE)
         g_pHyprRenderer->damageWindow(PWINDOW);
 

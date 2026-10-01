@@ -16,8 +16,11 @@
 #include <hyprland/src/managers/EventManager.hpp>
 
 // ── SEKAI_DIALOG_BUTTONS: 대화상자에는 닫기 단추만 ─────────────────
+//    SEKAI_FIXED_SIZE: 크기를 바꿀 수 없는 창에는 최대화 단추가 없다 (최소화·닫기만)
 static bool sekaiDialogSkip(const PHLWINDOW& w, const std::string& icon) {
-    return (icon == "sekai:min" || icon == "sekai:max") && w && w->parent();
+    if (!w)
+        return false;
+    return ((icon == "sekai:min" || icon == "sekai:max") && w->parent()) || (icon == "sekai:max" && w->sekaiFixedSize());
 }
 
 // ── SEKAI_SNAP: 끌어서 스냅 ─────────────────────────────────────
@@ -330,7 +333,7 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
     if (doButtonPress(PBARPADDING, PBARBUTTONPADDING, PHEIGHT, COORDS, BUTTONSRIGHT))
         return;
 
-    if (!ON_DOUBLE_CLICK.empty() && !(PWINDOW && PWINDOW->parent()) /* SEKAI_DIALOG_BUTTONS */ &&
+    if (!ON_DOUBLE_CLICK.empty() && !(PWINDOW && (PWINDOW->parent() || PWINDOW->sekaiFixedSize())) /* SEKAI_DIALOG_BUTTONS · SEKAI_FIXED_SIZE */ &&
         std::chrono::duration_cast<std::chrono::milliseconds>(Time::steadyNow() - m_lastMouseDown).count() < 400 /* Arbitrary delay I found suitable */) {
         g_pKeybindManager->m_dispatchers["exec"](ON_DOUBLE_CLICK);
         m_bDragPending = false;

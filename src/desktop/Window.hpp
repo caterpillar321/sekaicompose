@@ -398,6 +398,7 @@ class CWindow {
     bool                       isModal();
     Vector2D                   requestedMinSize();
     Vector2D                   requestedMaxSize();
+    bool                       sekaiFixedSize(); // SEKAI_FIXED_SIZE: 앱이 크기를 못 바꾸게 한 창 (최소 = 최대)
     Vector2D                   realToReportSize();
     Vector2D                   realToReportPosition();
     Vector2D                   xwaylandSizeToReal(Vector2D size);

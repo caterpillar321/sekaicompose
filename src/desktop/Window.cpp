@@ -1726,6 +1726,15 @@ Vector2D CWindow::requestedMinSize() {
     return minSize;
 }
 
+// SEKAI_FIXED_SIZE: 크기를 바꿀 수 없는 창 (GTK set_resizable(FALSE) 등 — 최소 크기 = 최대 크기).
+//   이런 창을 최대화하면 틀만 커지고 내용은 그대로라 빈 자리가 생긴다 → 최대화·스냅을 하지 않는다 (윈도우처럼)
+bool CWindow::sekaiFixedSize() {
+    if (m_isX11 ? !m_xwaylandSurface || !m_xwaylandSurface->m_sizeHints : !m_xdgSurface || !m_xdgSurface->m_toplevel)
+        return false;
+    const Vector2D MIN = requestedMinSize(), MAX = requestedMaxSize();
+    return MAX.x < 99999 && MAX.y < 99999 && MIN.x > 1 && MIN.y > 1 && MAX.x <= MIN.x + 1 && MAX.y <= MIN.y + 1;
+}
+
 Vector2D CWindow::requestedMaxSize() {
     constexpr int NO_MAX_SIZE_LIMIT = 99999;
     if (((m_isX11 && !m_xwaylandSurface->m_sizeHints) || (!m_isX11 && (!m_xdgSurface || !m_xdgSurface->m_toplevel)) || m_windowData.noMaxSize.valueOrDefault()))

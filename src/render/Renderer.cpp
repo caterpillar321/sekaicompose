@@ -470,6 +470,10 @@ void CHyprRenderer::renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const T
     TRACY_GPU_ZONE("RenderWindow");
 
     const auto                       PWORKSPACE = pWindow->m_workspace;
+    // SEKAI_FLOAT_OFFSET: 데스크톱이 미끄러지는 동안에만 쓰는 그리기 오프셋 — 그 사이 다른 데스크톱·모니터로 옮겨진
+    //   창에 남아 창과 제목줄만 밀려 그려졌다(클릭 판정은 제자리). 지금 데스크톱이 움직이지 않으면 버린다
+    if (pWindow->m_floatingOffset != Vector2D{} && PWORKSPACE && !PWORKSPACE->m_renderOffset->isBeingAnimated())
+        pWindow->m_floatingOffset = Vector2D{};
     const auto                       REALPOS    = pWindow->m_realPosition->value() + (pWindow->m_pinned ? Vector2D{} : PWORKSPACE->m_renderOffset->value());
     static auto                      PDIMAROUND = CConfigValue<Hyprlang::FLOAT>("decoration:dim_around");
     static auto                      PBLUR      = CConfigValue<Hyprlang::INT>("decoration:blur:enabled");

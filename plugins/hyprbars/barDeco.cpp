@@ -252,7 +252,8 @@ void CHyprBar::onTouchMove(SCallbackInfo& info, ITouch::SMotionEvent e) {
 }
 
 void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownEvent> touchEvent) {
-    m_bTouchEv = touchEvent.has_value();
+    m_bTouchEv       = touchEvent.has_value();
+    m_bCancelledDown = false; // SEKAI_BAR_INPUT: 지난 누름의 표시가 남아 이번 뗌(본문 클릭)을 삼키지 않게
     // SEKAI_BAR_HIDDEN: 막대를 숨긴 창(nobar — 제목줄을 스스로 그리는 크롬·탐색기)의 누름은 앱 몫이다
     //   (전엔 화면 끝까지 넓힌 판정(EDGE2)이 최대화한 창의 탭 줄·창 단추를 가로챘다)
     if (m_hidden) {
@@ -336,6 +337,13 @@ void CHyprBar::handleUpEvent(SCallbackInfo& info) {
             m_bDragPending  = false;
             sekaiSnapCancel();
         }
+        // SEKAI_BAR_INPUT: 창이 초점을 잃은 사이(최소화 단추·저장할까요 창) 뗌 — 우리가 삼킨 누름의 뗌이면
+        //   함께 삼키고, 표시는 모두 지운다
+        if (m_bCancelledDown)
+            info.cancelled = true;
+        m_bCancelledDown = false;
+        m_bDragPending   = false;
+        m_bTouchEv       = false;
         return;
     }
 
@@ -376,6 +384,20 @@ bool CHyprBar::doButtonPress(Hyprlang::INT* const* PBARPADDING, Hyprlang::INT* c
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - b.size - offset : offset), (BARBUF.y - b.size) / 2.0}.floor();
 
         if (VECINRECT(COORDS, currentPos.x, currentPos.y, currentPos.x + b.size + **PBARBUTTONPADDING, currentPos.y + b.size)) {
+            // SEKAI_BAR_INPUT: 창 조작 단추는 이 창에 곧바로 (exec 로 hyprctl 을 띄우면 도착했을 때의 초점 창에 먹었다)
+            if (const auto W = m_pWindow.lock(); W && (b.icon == "sekai:close" || b.icon == "sekai:min" || b.icon == "sekai:max")) {
+                const auto ADDR = std::format("address:0x{:x}", (uintptr_t)W.get());
+                if (b.icon == "sekai:close")
+                    g_pKeybindManager->m_dispatchers["closewindow"](ADDR);
+                else if (b.icon == "sekai:min")
+                    g_pKeybindManager->m_dispatchers["movetoworkspacesilent"]("special:min," + ADDR);
+                else {
+                    g_pCompositor->focusWindow(W); // fullscreen 은 초점 창에 걸린다 — 방금(누를 때) 준 초점을 확실히
+                    if (g_pCompositor->m_lastWindow.lock() == W)
+                        g_pKeybindManager->m_dispatchers["fullscreen"]("1");
+                }
+                return true;
+            }
             // hit on close
             g_pKeybindManager->m_dispatchers["exec"](b.cmd);
             return true;

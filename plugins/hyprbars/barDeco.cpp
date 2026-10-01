@@ -15,6 +15,11 @@
 #include "globals.hpp"
 #include <hyprland/src/managers/EventManager.hpp>
 
+// ── SEKAI_DIALOG_BUTTONS: 대화상자에는 닫기 단추만 ─────────────────
+static bool sekaiDialogSkip(const PHLWINDOW& w, const std::string& icon) {
+    return (icon == "sekai:min" || icon == "sekai:max") && w && w->parent();
+}
+
 // ── SEKAI_SNAP: 끌어서 스냅 ─────────────────────────────────────
 static std::string sekaiZone = "none";
 
@@ -313,7 +318,7 @@ void CHyprBar::handleDownEvent(SCallbackInfo& info, std::optional<ITouch::SDownE
     if (doButtonPress(PBARPADDING, PBARBUTTONPADDING, PHEIGHT, COORDS, BUTTONSRIGHT))
         return;
 
-    if (!ON_DOUBLE_CLICK.empty() &&
+    if (!ON_DOUBLE_CLICK.empty() && !(PWINDOW && PWINDOW->parent()) /* SEKAI_DIALOG_BUTTONS */ &&
         std::chrono::duration_cast<std::chrono::milliseconds>(Time::steadyNow() - m_lastMouseDown).count() < 400 /* Arbitrary delay I found suitable */) {
         g_pKeybindManager->m_dispatchers["exec"](ON_DOUBLE_CLICK);
         m_bDragPending = false;
@@ -365,6 +370,8 @@ bool CHyprBar::doButtonPress(Hyprlang::INT* const* PBARPADDING, Hyprlang::INT* c
     float offset = **PBARPADDING;
 
     for (auto& b : g_pGlobalState->buttons) {
+        if (sekaiDialogSkip(m_pWindow.lock(), b.icon)) // SEKAI_DIALOG_BUTTONS
+            continue;
         const auto BARBUF     = Vector2D{(int)assignedBoxGlobal().w, **PHEIGHT};
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - b.size - offset : offset), (BARBUF.y - b.size) / 2.0}.floor();
 
@@ -483,6 +490,8 @@ void CHyprBar::renderBarTitle(const Vector2D& bufferSize, const float scale) {
 
     float              buttonSizes = **PBARBUTTONPADDING;
     for (auto& b : g_pGlobalState->buttons) {
+        if (sekaiDialogSkip(m_pWindow.lock(), b.icon)) // SEKAI_DIALOG_BUTTONS
+            continue;
         buttonSizes += b.size + **PBARBUTTONPADDING;
     }
 
@@ -560,6 +569,8 @@ size_t CHyprBar::getVisibleButtonCount(Hyprlang::INT* const* PBARBUTTONPADDING, 
     size_t count          = 0;
 
     for (const auto& button : g_pGlobalState->buttons) {
+        if (sekaiDialogSkip(m_pWindow.lock(), button.icon)) // SEKAI_DIALOG_BUTTONS
+            continue;
         const float buttonSpace = (button.size + **PBARBUTTONPADDING) * scale;
         if (availableSpace >= buttonSpace) {
             count++;
@@ -591,8 +602,11 @@ void CHyprBar::renderBarButtons(const Vector2D& bufferSize, const float scale) {
 
     // draw buttons
     int offset = **PBARPADDING * scale;
-    for (size_t i = 0; i < visibleCount; ++i) {
+    for (size_t i = 0, sekaiShown = 0; i < g_pGlobalState->buttons.size() && sekaiShown < visibleCount; ++i) {
         const auto& button           = g_pGlobalState->buttons[i];
+        if (sekaiDialogSkip(m_pWindow.lock(), button.icon)) // SEKAI_DIALOG_BUTTONS
+            continue;
+        ++sekaiShown;
         const auto  scaledButtonSize = button.size * scale;
         const auto  scaledButtonsPad = **PBARBUTTONPADDING * scale;
 
@@ -645,8 +659,11 @@ void CHyprBar::renderBarButtonsText(CBox* barBox, const float scale, const float
     int                offset        = **PBARPADDING * scale;
     float              noScaleOffset = **PBARPADDING;
 
-    for (size_t i = 0; i < visibleCount; ++i) {
+    for (size_t i = 0, sekaiShown = 0; i < g_pGlobalState->buttons.size() && sekaiShown < visibleCount; ++i) {
         auto&      button           = g_pGlobalState->buttons[i];
+        if (sekaiDialogSkip(m_pWindow.lock(), button.icon)) // SEKAI_DIALOG_BUTTONS
+            continue;
+        ++sekaiShown;
         const auto scaledButtonSize = button.size * scale;
         const auto scaledButtonsPad = **PBARBUTTONPADDING * scale;
 
@@ -928,6 +945,8 @@ void CHyprBar::damageOnButtonHover() {
     const auto         COORDS = cursorRelativeToBar();
 
     for (auto& b : g_pGlobalState->buttons) {
+        if (sekaiDialogSkip(m_pWindow.lock(), b.icon)) // SEKAI_DIALOG_BUTTONS
+            continue;
         const auto BARBUF     = Vector2D{(int)assignedBoxGlobal().w, **PHEIGHT};
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - b.size - offset : offset), (BARBUF.y - b.size) / 2.0}.floor();
 

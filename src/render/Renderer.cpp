@@ -598,12 +598,16 @@ void CHyprRenderer::renderWindow(PHLWINDOW pWindow, PHLMONITOR pMonitor, const T
         }
 
         renderdata.surfaceCounter = 0;
+        // SEKAI_GEOM_SUBSURFACE: 주 면은 xdg 창 영역(geometry)만큼 잘라 창 자리에 그린다 (calculateUVForSurface) —
+        //   하위 면도 같은 기준으로 옮겨야 한다. 스스로 그림자를 그리는 앱(Firefox 의 탭 제목줄 등 — 타일 상태를
+        //   보내도 그림자를 둔다)은 창 영역이 (16,15) 처럼 안쪽에서 시작해, 내용을 하위 면에 그리면 그만큼 밀려 잘렸다
+        const Vector2D SEKAIGEOM = (!pWindow->m_isX11 && pWindow->m_xdgSurface) ? pWindow->m_xdgSurface->m_current.geometry.pos() : Vector2D{};
         pWindow->m_wlSurface->resource()->breadthfirst(
-            [this, &renderdata, &pWindow](SP<CWLSurfaceResource> s, const Vector2D& offset, void* data) {
-                renderdata.localPos    = offset;
+            [this, &renderdata, &pWindow, SEKAIGEOM](SP<CWLSurfaceResource> s, const Vector2D& offset, void* data) {
+                renderdata.mainSurface = s == pWindow->m_wlSurface->resource();
+                renderdata.localPos    = renderdata.mainSurface ? offset : offset - SEKAIGEOM;
                 renderdata.texture     = s->m_current.texture;
                 renderdata.surface     = s;
-                renderdata.mainSurface = s == pWindow->m_wlSurface->resource();
                 m_renderPass.add(makeUnique<CSurfacePassElement>(renderdata));
                 renderdata.surfaceCounter++;
             },

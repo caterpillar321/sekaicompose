@@ -1009,7 +1009,10 @@ SP<CWLSurfaceResource> CCompositor::vectorWindowToSurface(const Vector2D& pos, P
         return PPOPUP->m_wlSurface->resource();
     }
 
-    auto [surf, local] = pWindow->m_wlSurface->resource()->at(pos - pWindow->m_realPosition->goal(), true);
+    // SEKAI_GEOM_SUBSURFACE: 창 자리의 (0,0) 은 면 좌표로는 xdg 창 영역의 시작점 — 그림과 같은 기준으로 찾고,
+    //   앱에 보내는 좌표(sl)도 그 면의 좌표로 (그림자를 두는 앱에서 클릭이 그림자 폭만큼 어긋나지 않게)
+    const Vector2D GEOM = pWindow->m_xdgSurface ? pWindow->m_xdgSurface->m_current.geometry.pos() : Vector2D{};
+    auto [surf, local]  = pWindow->m_wlSurface->resource()->at(pos - pWindow->m_realPosition->goal() + GEOM, true);
     if (surf) {
         sl = local;
         return surf;

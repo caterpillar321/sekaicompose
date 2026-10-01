@@ -1,4 +1,5 @@
 #include "XDGShell.hpp"
+void sekaiClientMoveStart(PHLWINDOW w); // SEKAI_CLIENT_MOVE (InputManager.cpp)
 #include "XDGDialog.hpp"
 #include <algorithm>
 #include "../Compositor.hpp"
@@ -170,6 +171,9 @@ CXDGToplevelResource::CXDGToplevelResource(SP<CXdgToplevel> resource_, SP<CXDGSu
         m_state.appid = id;
         m_events.metadataChanged.emit();
     });
+
+    // SEKAI_CLIENT_MOVE: 창이 그린 제목줄을 끌면 옮긴다
+    m_resource->setMove([this](CXdgToplevel* r, wl_resource* seat, uint32_t serial) { sekaiClientMoveStart(m_window.lock()); });
 
     m_resource->setSetMaxSize([this](CXdgToplevel* r, int32_t x, int32_t y) {
         m_pending.maxSize = {x, y};

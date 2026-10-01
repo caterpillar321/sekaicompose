@@ -38,6 +38,53 @@
 #include "../../managers/LayoutManager.hpp"
 #include "../../managers/permissions/DynamicPermissionManager.hpp"
 
+// ── SEKAI_CLIENT_MOVE: 창이 스스로 그린 제목줄(CSD) 끌기 ─────────────────
+//   XDGShell.cpp 의 move 요청에서 시작, 버튼을 떼면 끝. 스냅 이벤트는 hyprbars 패치와 같다.
+static bool         sekaiMoving    = false;
+static std::string  sekaiMoveZone  = "none";
+static PHLWINDOWREF sekaiMoveWin;
+static bool         sekaiButtonHeld = false; // SEKAI_CLIENT_MOVE2: 지금 마우스 버튼이 눌려 있나 (onMouseButton 이 적는다)
+
+static std::string  sekaiMoveZoneAt(const Vector2D& p, PHLMONITOR& mon) {
+    mon = g_pCompositor->getMonitorFromVector(p);
+    if (!mon)
+        return "none";
+    const double x = p.x - mon->m_position.x, y = p.y - mon->m_position.y;
+    const double W = mon->m_size.x, H = mon->m_size.y;
+    const double E = 4;                                  // 가장자리로 치는 두께
+    const double C = std::max(48.0, std::min(W, H) / 8); // 모서리로 치는 길이
+    const bool   L = x <= E, R = x >= W - 1 - E, T = y <= E, B = y >= H - 1 - E;
+    if ((L && y < C) || (T && x < C))
+        return "tl";
+    if ((R && y < C) || (T && x > W - C))
+        return "tr";
+    if ((L && y > H - C) || (B && x < C))
+        return "bl";
+    if ((R && y > H - C) || (B && x > W - C))
+        return "br";
+    if (L)
+        return "left";
+    if (R)
+        return "right";
+    if (T)
+        return "max";
+    return "none";
+}
+
+void sekaiClientMoveStart(PHLWINDOW w) {
+    if (!w || sekaiMoving || !sekaiButtonHeld || !g_pInputManager->m_currentlyDraggedWindow.expired())
+        return;
+    g_pKeybindManager->m_dispatchers["mouse"]("1movewindow");
+    if (g_pInputManager->m_currentlyDraggedWindow.lock() != w) { // 커서 밑이 다른 창이었다 — 되돌린다
+        g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
+        return;
+    }
+    sekaiMoving   = true;
+    sekaiMoveWin  = w;
+    sekaiMoveZone = "none";
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapstart", std::format("{:x}", (uintptr_t)w.get())});
+}
+
 #include "../../helpers/time/Time.hpp"
 
 #include <aquamarine/input/Input.hpp>
@@ -165,6 +212,15 @@ void CInputManager::sendMotionEventsToFocused() {
 
 void CInputManager::mouseMoveUnified(uint32_t time, bool refocus, bool mouse) {
     m_lastInputMouse = mouse;
+
+    if (sekaiMoving) { // SEKAI_CLIENT_MOVE — 끄는 중 커서가 닿은 영역 (스냅 미리보기)
+        PHLMONITOR mon;
+        const auto z = sekaiMoveZoneAt(getMouseCoordsInternal(), mon);
+        if (z != sekaiMoveZone) {
+            sekaiMoveZone = z;
+            g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnap", std::format("{},{}", z, mon ? mon->m_name : "")});
+        }
+    }
 
     if (!g_pCompositor->m_readyToProcess || g_pCompositor->m_isShuttingDown || g_pCompositor->m_unsafeState)
         return;
@@ -609,6 +665,18 @@ void CInputManager::mouseMoveUnified(uint32_t time, bool refocus, bool mouse) {
 void CInputManager::onMouseButton(IPointer::SButtonEvent e) {
     EMIT_HOOK_EVENT_CANCELLABLE("mouseButton", e);
 
+    if (sekaiMoving && e.state != WL_POINTER_BUTTON_STATE_PRESSED) { // SEKAI_CLIENT_MOVE — 놓음
+        sekaiMoving = false;
+        g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
+        PHLMONITOR mon;
+        const auto z = sekaiMoveZoneAt(getMouseCoordsInternal(), mon);
+        if (const auto w = sekaiMoveWin.lock())
+            g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", std::format("{},{},{:x}", z, mon ? mon->m_name : "", (uintptr_t)w.get())});
+        else // SEKAI_CLIENT_MOVE2: 끄던 창이 닫혔다 — 셸이 끌기를 끝내게
+            g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", "none,,0"});
+        sekaiMoveZone = "none";
+    }
+
     if (e.mouse)
         recheckMouseWarpOnMouseInput();
 
@@ -621,6 +689,8 @@ void CInputManager::onMouseButton(IPointer::SButtonEvent e) {
             return;
         std::erase_if(m_currentlyHeldButtons, [&](const auto& other) { return other == e.button; });
     }
+
+    sekaiButtonHeld = !m_currentlyHeldButtons.empty(); // SEKAI_CLIENT_MOVE2
 
     switch (m_clickBehavior) {
         case CLICKMODE_DEFAULT: processMouseDownNormal(e); break;

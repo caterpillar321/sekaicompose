@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=SekaiCompose
+Comment=The Wayland compositor of SekaiOS (a fork of Hyprland)
+Exec=sekaicomp
+Type=Application
+DesktopNames=SekaiOS
+Keywords=wayland;compositor;

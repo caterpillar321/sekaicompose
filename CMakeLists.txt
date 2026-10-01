@@ -400,17 +400,20 @@ else()
   message(STATUS "building tests is enabled (NO_TESTS not defined)")
 endif()
 
-# binary and symlink
+# binary and symlinks — SekaiCompose 의 실행 파일은 sekaicomp.
+#   Hyprland·hyprland 는 원본 이름으로 부르던 스크립트·도구를 위한 호환 링크다
+set_target_properties(Hyprland PROPERTIES OUTPUT_NAME sekaicomp)
 install(TARGETS Hyprland)
 
-install(
-  CODE "execute_process( \
-        COMMAND ${CMAKE_COMMAND} -E create_symlink \
-        ${CMAKE_INSTALL_FULL_BINDIR}/Hyprland \
-        \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_BINDIR}/hyprland\" \
-        )")
+foreach(compat Hyprland hyprland)
+  install(
+    CODE "execute_process( \
+          COMMAND ${CMAKE_COMMAND} -E create_symlink sekaicomp \
+          \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_BINDIR}/${compat}\" \
+          )")
+endforeach()
 # session file
-install(FILES ${CMAKE_SOURCE_DIR}/example/hyprland.desktop
+install(FILES ${CMAKE_SOURCE_DIR}/example/sekaicomp.desktop
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/wayland-sessions)
 
 # allow Hyprland to find assets

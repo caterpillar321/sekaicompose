@@ -4,7 +4,7 @@ install_data(
   install_tag: 'runtime',
 )
 install_data(
-  'hyprland.desktop',
+  'sekaicomp.desktop',
   install_dir: join_paths(get_option('datadir'), 'wayland-sessions'),
   install_tag: 'runtime',
 )

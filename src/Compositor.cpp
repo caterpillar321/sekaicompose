@@ -1366,6 +1366,40 @@ void CCompositor::changeWindowZOrder(PHLWINDOW pWindow, bool top) {
     if (!validMapped(pWindow))
         return;
 
+    // SEKAI_RAISE: 윈도우처럼 — 최대화한 창도 보통 창과 같은 쌓임 순서, 대화상자는 주인 창과 함께 위로
+    static bool sekaiRaising = false;
+    if (top && !sekaiRaising) {
+        sekaiRaising = true;
+        changeWindowZOrder(pWindow, true); // 창 자체 (아래의 원래 경로)
+
+        const auto WS      = pWindow->m_workspace;
+        auto       isChild = [&](PHLWINDOW w) {
+            auto p = w->parent();
+            for (int i = 0; p && i < 16; ++i, p = p->parent())
+                if (p == pWindow)
+                    return true;
+            return false;
+        };
+        std::vector<PHLWINDOW> kids; // 지금 쌓인 순서(아래→위) 그대로
+        for (auto const& w : m_windows)
+            if (w != pWindow && w->m_isMapped && !w->isHidden() && w->m_workspace == WS && isChild(w))
+                kids.emplace_back(w);
+
+        if (WS && WS->m_hasFullscreenWindow && pWindow->isFullscreen()) {
+            // 최대화한 창을 올렸다 — 그 위에 떠 있던 창들을 아래로 (고정한 창·대화상자는 그대로 위)
+            for (auto const& w : m_windows)
+                if (w != pWindow && w->m_workspace == WS && !w->isFullscreen() && !w->m_fadingOut && !w->m_pinned && std::ranges::find(kids, w) == kids.end())
+                    w->m_createdOverFullscreen = false;
+        }
+        for (auto const& w : kids)
+            changeWindowZOrder(w, true);
+        if (WS && WS->m_hasFullscreenWindow)
+            updateFullscreenFadeOnWorkspace(WS); // 아래로 간 창은 흐리게 숨기고, 올린 창은 보이게
+
+        sekaiRaising = false;
+        return;
+    }
+
     if (top)
         pWindow->m_createdOverFullscreen = true;
 

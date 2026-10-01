@@ -2361,6 +2361,10 @@ SDispatchResult CKeybindManager::focusWindow(std::string regexp) {
     } else
         g_pCompositor->focusWindow(PWINDOW);
 
+    // SEKAI_RAISE: 윈도우처럼 — 창을 고르면(작업 표시줄·작업 관리자) 맨 앞으로
+    if (PWINDOW->m_isFloating || PWINDOW->isFullscreen())
+        g_pCompositor->changeWindowZOrder(PWINDOW, true);
+
     PWINDOW->warpCursor();
 
     return {};

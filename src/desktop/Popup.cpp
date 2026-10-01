@@ -231,6 +231,13 @@ void CPopup::reposition() {
         return;
 
     CBox box = {PMONITOR->m_position.x, PMONITOR->m_position.y, PMONITOR->m_size.x, PMONITOR->m_size.y};
+    // SEKAI_POPUP_RESERVED: 창의 메뉴는 작업 표시줄 같은 예약 영역을 피한다 (전체 화면 창·레이어의 팝업은 그대로)
+    if (const auto W = m_windowOwner.lock(); W && !W->isEffectiveInternalFSMode(FSMODE_FULLSCREEN)) {
+        box.x += PMONITOR->m_reservedTopLeft.x;
+        box.y += PMONITOR->m_reservedTopLeft.y;
+        box.w -= PMONITOR->m_reservedTopLeft.x + PMONITOR->m_reservedBottomRight.x;
+        box.h -= PMONITOR->m_reservedTopLeft.y + PMONITOR->m_reservedBottomRight.y;
+    }
     m_resource->applyPositioning(box, COORDS);
 }
 

@@ -186,6 +186,15 @@ static int sekaiBarScreenEdges(PHLWINDOW w) {
     return (POS.x - EXT.topLeft.x <= L + 1 ? 1 : 0) | (POS.x + SIZE.x + EXT.bottomRight.x >= R - 1 ? 2 : 0) | (POS.y - EXT.topLeft.y <= T + 1 ? 4 : 0);
 }
 
+// SEKAI_BUTTON_SLOT: 단추 칸 — 아이콘(바 좌표 iconX = currentPos.x + 간격) ± 간격의 반, 제목줄 높이 전체.
+//   맨 위 4px 이 창 테두리로 넘어가는 창(크기 조절이 되고 화면 맨 위에 붙지 않은 창)이면 그 4px 은 뺀다 (onMouseButton 과 같은 판정)
+static bool sekaiInButton(PHLWINDOW w, const Vector2D& c, const Vector2D& currentPos, double size, double pad, double barH) {
+    static auto* const PSEKAIRESIZE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "general:resize_on_border")->getDataStaticPtr();
+    const bool         TOPBORDER    = **PSEKAIRESIZE && w && !w->isFullscreen() && !w->isX11OverrideRedirect() && !(sekaiBarScreenEdges(w) & 4);
+    const double       X0 = currentPos.x + pad / 2.0, X1 = currentPos.x + pad + size + pad / 2.0;
+    return c.x >= X0 && c.x < X1 && c.y >= (TOPBORDER ? 4 : 0) && c.y < barH;
+}
+
 void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
     if (e.state != WL_POINTER_BUTTON_STATE_PRESSED && m_bDraggingThis) { // SEKAI_SNAP_DROP
         handleUpEvent(info);
@@ -209,7 +218,9 @@ void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
         // SEKAI_BORDER_EDGE: 화면 끝(모니터 끝·작업 표시줄 끝)에 붙은 변은 넘기지 않는다 — 제목줄 몫
         const auto SEKAI_B = assignedBoxGlobal();
         const int  SEKAI_E = sekaiBarScreenEdges(SEKAI_W); // SEKAI_BORDER_EDGE2: Hyprland 와 같은 상자로
-        if ((SEKAI_C.y < 4 && !(SEKAI_E & 4)) || (SEKAI_C.x < 4 && !(SEKAI_E & 1)) || (SEKAI_C.x > SEKAI_B.w - 4 && !(SEKAI_E & 2)))
+        // SEKAI_BUTTON_SLOT: 위쪽 4px 만 창 테두리 — 옆 테두리는 창 바깥 (Hyprland SEKAI_BORDER_TOPONLY 와 같게)
+        (void)SEKAI_B;
+        if (SEKAI_C.y < 4 && !(SEKAI_E & 4))
             return;
     }
 
@@ -383,7 +394,7 @@ bool CHyprBar::doButtonPress(Hyprlang::INT* const* PBARPADDING, Hyprlang::INT* c
         const auto BARBUF     = Vector2D{(int)assignedBoxGlobal().w, **PHEIGHT};
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - b.size - offset : offset), (BARBUF.y - b.size) / 2.0}.floor();
 
-        if (VECINRECT(COORDS, currentPos.x, currentPos.y, currentPos.x + b.size + **PBARBUTTONPADDING, currentPos.y + b.size)) {
+        if (sekaiInButton(m_pWindow.lock(), COORDS, currentPos, b.size, **PBARBUTTONPADDING, BARBUF.y)) { // SEKAI_BUTTON_SLOT
             // SEKAI_BAR_INPUT: 창 조작 단추는 이 창에 곧바로 (exec 로 hyprctl 을 띄우면 도착했을 때의 초점 창에 먹었다)
             if (const auto W = m_pWindow.lock(); W && (b.icon == "sekai:close" || b.icon == "sekai:min" || b.icon == "sekai:max")) {
                 const auto ADDR = std::format("address:0x{:x}", (uintptr_t)W.get());
@@ -692,7 +703,7 @@ void CHyprBar::renderBarButtonsText(CBox* barBox, const float scale, const float
         // check if hovering here
         const auto BARBUF     = Vector2D{(int)assignedBoxGlobal().w, **PHEIGHT};
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - button.size - noScaleOffset : noScaleOffset), (BARBUF.y - button.size) / 2.0}.floor();
-        bool       hovering   = VECINRECT(COORDS, currentPos.x, currentPos.y, currentPos.x + button.size + **PBARBUTTONPADDING, currentPos.y + button.size);
+        bool       hovering   = sekaiInButton(m_pWindow.lock(), COORDS, currentPos, button.size, **PBARBUTTONPADDING, BARBUF.y); // SEKAI_BUTTON_SLOT
         noScaleOffset += **PBARBUTTONPADDING + button.size;
 
         if (button.iconTex->m_texID == 0 /* icon is not rendered */ && !button.icon.empty()) {
@@ -972,7 +983,7 @@ void CHyprBar::damageOnButtonHover() {
         const auto BARBUF     = Vector2D{(int)assignedBoxGlobal().w, **PHEIGHT};
         Vector2D   currentPos = Vector2D{(BUTTONSRIGHT ? BARBUF.x - **PBARBUTTONPADDING - b.size - offset : offset), (BARBUF.y - b.size) / 2.0}.floor();
 
-        bool       hover = VECINRECT(COORDS, currentPos.x, currentPos.y, currentPos.x + b.size + **PBARBUTTONPADDING, currentPos.y + b.size);
+        bool       hover = sekaiInButton(m_pWindow.lock(), COORDS, currentPos, b.size, **PBARBUTTONPADDING, BARBUF.y); // SEKAI_BUTTON_SLOT
 
         const size_t IDX = &b - &g_pGlobalState->buttons[0];
         const bool   WAS = IDX < 32 && (m_iSekaiHover & (1u << IDX));

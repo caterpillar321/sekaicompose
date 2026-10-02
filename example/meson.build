@@ -4,7 +4,7 @@ install_data(
   install_tag: 'runtime',
 )
 install_data(
-  'sekaicomp.desktop',
+  'worldlink.desktop',
   install_dir: join_paths(get_option('datadir'), 'wayland-sessions'),
   install_tag: 'runtime',
 )

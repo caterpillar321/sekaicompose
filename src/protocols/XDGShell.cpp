@@ -338,21 +338,25 @@ void CXDGToplevelResource::close() {
     m_resource->sendClose();
 }
 
+// SEKAI_GEOM_MINSIZE: xdg 의 최소·최대 크기는 이미 창 영역(geometry) 기준이다 — 원본은 여기에 창 영역의 시작점
+//   (스스로 그리는 그림자 폭)을 더해서, 그림자를 두는 창(GTK 확인 창: 시작점 85x70)이 그만큼 크게 잡혔다.
+//   그러면 내용이 큰 창에 늘려 그려지고(흐릿함), 누름 좌표(SEKAI_GEOM_SUBSURFACE 로 창 영역 기준)와 어긋나
+//   아래쪽 단추가 눌리지 않았다. 더하지 않는다
 Vector2D CXDGToplevelResource::layoutMinSize() {
     Vector2D minSize;
     if (m_current.minSize.x > 1)
-        minSize.x = m_owner ? m_current.minSize.x + m_owner->m_current.geometry.pos().x : m_current.minSize.x;
+        minSize.x = m_current.minSize.x;
     if (m_current.minSize.y > 1)
-        minSize.y = m_owner ? m_current.minSize.y + m_owner->m_current.geometry.pos().y : m_current.minSize.y;
+        minSize.y = m_current.minSize.y;
     return minSize;
 }
 
 Vector2D CXDGToplevelResource::layoutMaxSize() {
     Vector2D maxSize;
     if (m_current.maxSize.x > 1)
-        maxSize.x = m_owner ? m_current.maxSize.x + m_owner->m_current.geometry.pos().x : m_current.maxSize.x;
+        maxSize.x = m_current.maxSize.x;
     if (m_current.maxSize.y > 1)
-        maxSize.y = m_owner ? m_current.maxSize.y + m_owner->m_current.geometry.pos().y : m_current.maxSize.y;
+        maxSize.y = m_current.maxSize.y;
     return maxSize;
 }
 

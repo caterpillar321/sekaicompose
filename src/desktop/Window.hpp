@@ -399,6 +399,7 @@ class CWindow {
     Vector2D                   requestedMinSize();
     Vector2D                   requestedMaxSize();
     bool                       sekaiFixedSize(); // SEKAI_FIXED_SIZE: 앱이 크기를 못 바꾸게 한 창 (최소 = 최대)
+    bool                       sekaiClientDecoration(); // SEKAI_CLIENT_DECO: 앱이 제목줄을 스스로 그리겠다고 했다
     Vector2D                   realToReportSize();
     Vector2D                   realToReportPosition();
     Vector2D                   xwaylandSizeToReal(Vector2D size);

@@ -13,6 +13,10 @@ class CServerDecorationKDE {
 
     bool good();
 
+    // SEKAI_CLIENT_DECO: 앱이 요청한 모드 (client = 제목줄을 스스로 그린다)
+    bool                   m_sekaiClient = false;
+    WP<CWLSurfaceResource> m_surface;
+
   private:
     SP<COrgKdeKwinServerDecoration> m_resource;
 };
@@ -22,6 +26,8 @@ class CServerDecorationKDEProtocol : public IWaylandProtocol {
     CServerDecorationKDEProtocol(const wl_interface* iface, const int& ver, const std::string& name);
 
     virtual void bindManager(wl_client* client, void* data, uint32_t ver, uint32_t id);
+
+    bool         sekaiWantsClient(SP<CWLSurfaceResource> surf); // SEKAI_CLIENT_DECO
 
   private:
     void onManagerResourceDestroy(wl_resource* res);

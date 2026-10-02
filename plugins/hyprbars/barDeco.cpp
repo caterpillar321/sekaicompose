@@ -994,6 +994,10 @@ void CHyprBar::updateRules() {
     for (auto& r : rules) {
         applyRule(r);
     }
+    // SEKAI_CLIENT_DECO: 제목줄을 스스로 그리겠다고 한 앱(Discord·VS Code 같은 Electron, Firefox 탭 제목줄 …)에는 막대를
+    //   그리지 않는다 — 앱 이름으로 하나씩 nobar 규칙을 다는 대신 앱의 요청을 따른다 (제목줄이 두 개로 보이던 것)
+    if (!m_hidden && PWINDOW->sekaiClientDecoration())
+        m_hidden = true;
 
     if (prevHidden != m_hidden)
         g_pDecorationPositioner->repositionDeco(this);

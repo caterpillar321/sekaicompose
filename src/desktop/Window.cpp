@@ -1,3 +1,4 @@
+#include "../protocols/ServerDecorationKDE.hpp"
 #include <algorithm>
 #include <ranges>
 #include <hyprutils/animation/AnimatedVariable.hpp>
@@ -1733,6 +1734,15 @@ bool CWindow::sekaiFixedSize() {
         return false;
     const Vector2D MIN = requestedMinSize(), MAX = requestedMaxSize();
     return MAX.x < 99999 && MAX.y < 99999 && MIN.x > 1 && MIN.y > 1 && MAX.x <= MIN.x + 1 && MAX.y <= MIN.y + 1;
+}
+
+// SEKAI_CLIENT_DECO: xdg-decoration 이나 KDE server-decoration 으로 client(제목줄을 앱이 그림)를 요청한 창
+bool CWindow::sekaiClientDecoration() {
+    if (m_isX11 || !m_xdgSurface || !m_xdgSurface->m_toplevel)
+        return false;
+    if (m_xdgSurface->m_toplevel->m_sekaiClientDeco)
+        return true;
+    return PROTO::serverDecorationKDE && m_wlSurface && m_wlSurface->resource() && PROTO::serverDecorationKDE->sekaiWantsClient(m_wlSurface->resource());
 }
 
 Vector2D CWindow::requestedMaxSize() {

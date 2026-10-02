@@ -96,6 +96,9 @@ class CXDGToplevelResource {
 
     PHLWINDOWREF                    m_window;
 
+    // SEKAI_CLIENT_DECO: 앱이 xdg-decoration 으로 "제목줄은 내가 그린다"(client-side)를 요청했다
+    bool                            m_sekaiClientDeco = false;
+
     bool                            good();
 
     Vector2D                        layoutMinSize();

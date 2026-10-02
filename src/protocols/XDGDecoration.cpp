@@ -3,9 +3,10 @@
 #include "../desktop/Window.hpp"
 #include <algorithm>
 
-// SEKAI_CLIENT_DECO: 앱이 고른 모드를 기억하고 그대로 돌려준다 (원본은 늘 server 로 답했다).
-//   client 를 고른 앱(Electron 의 Discord·VS Code, Firefox 탭 제목줄, GTK 헤더바 …)은 제목줄을 스스로 그리므로
-//   hyprbars 가 그 창에는 막대를 그리지 않는다 (CWindow::sekaiClientDecoration) — 제목줄이 두 개로 보이던 것
+// SEKAI_CLIENT_DECO: 앱이 고른 모드를 기억한다 — client 를 고른 앱(Electron 의 Discord·VS Code, Firefox 탭 제목줄 …)은
+//   제목줄을 스스로 그리므로 hyprbars 가 그 창에는 막대를 그리지 않는다 (CWindow::sekaiClientDecoration).
+//   답은 원본처럼 늘 server — client 로 답하면 GTK 대화상자가 큰 그림자 여백을 붙여 그리고, 창 크기가 그 여백까지
+//   잡혀 아래쪽 단추 누름이 창 밖으로 빠졌다 (sekai25). 위 앱들은 server 라는 답에도 스스로 그린다
 static void sekaiNoteXDGMode(wl_resource* toplevel, bool client) {
     const auto TL = CXDGToplevelResource::fromResource(toplevel);
     if (!TL || TL->m_sekaiClientDeco == client)
@@ -31,9 +32,9 @@ CXDGDecoration::CXDGDecoration(SP<CZxdgToplevelDecorationV1> resource_, wl_resou
         }
 
         const bool CLIENT = mode == ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
-        LOGM(LOG, "setMode: {}. Sending {} as reply. (SEKAI_CLIENT_DECO)", modeString, CLIENT ? "MODE_CLIENT_SIDE" : "MODE_SERVER_SIDE");
+        LOGM(LOG, "setMode: {}. Noting it and sending MODE_SERVER_SIDE as reply. (SEKAI_CLIENT_DECO)", modeString);
         sekaiNoteXDGMode(m_toplevelResource, CLIENT);
-        m_resource->sendConfigure(CLIENT ? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE : ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+        m_resource->sendConfigure(ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
     });
 
     m_resource->setUnsetMode([this](CZxdgToplevelDecorationV1*) {

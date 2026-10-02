@@ -1740,6 +1740,8 @@ bool CWindow::sekaiFixedSize() {
 bool CWindow::sekaiClientDecoration() {
     if (m_isX11 || !m_xdgSurface || !m_xdgSurface->m_toplevel)
         return false;
+    if (parent())
+        return false; // 대화상자는 원래대로 닫기 단추만 있는 막대를 둔다 (GTK 확인 창도 client 를 고른다 — × 가 사라지지 않게)
     if (m_xdgSurface->m_toplevel->m_sekaiClientDeco)
         return true;
     return PROTO::serverDecorationKDE && m_wlSurface && m_wlSurface->resource() && PROTO::serverDecorationKDE->sekaiWantsClient(m_wlSurface->resource());

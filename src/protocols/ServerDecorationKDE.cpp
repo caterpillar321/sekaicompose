@@ -11,10 +11,10 @@ CServerDecorationKDE::CServerDecorationKDE(SP<COrgKdeKwinServerDecoration> resou
     m_resource->setOnDestroy([this](COrgKdeKwinServerDecoration* pMgr) { PROTO::serverDecorationKDE->destroyResource(this); });
 
     m_surface = surf;
-    // SEKAI_CLIENT_DECO: 원본은 request_mode 를 무시하고 늘 server 로 답했다 — 앱이 고른 모드를 기억하고 그대로 답한다
+    // SEKAI_CLIENT_DECO: 앱이 고른 모드를 기억한다 (답은 원본처럼 늘 server — XDGDecoration.cpp 의 설명)
     m_resource->setRequestMode([this](COrgKdeKwinServerDecoration*, uint32_t mode) {
         const bool CLIENT = mode == ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT;
-        m_resource->sendMode(CLIENT ? ORG_KDE_KWIN_SERVER_DECORATION_MODE_CLIENT : ORG_KDE_KWIN_SERVER_DECORATION_MODE_SERVER);
+        m_resource->sendMode(ORG_KDE_KWIN_SERVER_DECORATION_MODE_SERVER);
         if (m_sekaiClient == CLIENT)
             return;
         m_sekaiClient = CLIENT;

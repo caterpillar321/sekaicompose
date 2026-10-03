@@ -104,6 +104,7 @@ static bool         sekaiMoving    = false;
 static std::string  sekaiMoveZone  = "none";
 static PHLWINDOWREF sekaiMoveWin;
 static bool         sekaiButtonHeld = false; // SEKAI_CLIENT_MOVE2: 지금 마우스 버튼이 눌려 있나 (onMouseButton 이 적는다)
+static Vector2D     sekaiPressXY;            // SEKAI_CLIENT_MOVE3: 마지막으로 버튼을 누른 자리 (끌기 기준점)
 
 static std::string  sekaiMoveZoneAt(const Vector2D& p, PHLMONITOR& mon) {
     mon = g_pCompositor->getMonitorFromVector(p);
@@ -147,6 +148,9 @@ void sekaiClientMoveStart(PHLWINDOW w) {
     sekaiMoving   = true;
     sekaiMoveWin  = w;
     sekaiMoveZone = "none";
+    // SEKAI_CLIENT_MOVE3: 기준점은 누른 자리 — 앱은 커서가 끌기 문턱(GTK 는 몇 px)을 넘은 뒤에야 move 를 청해, 그때의 커서를
+    //   기준으로 잡으면 창이 그만큼 덜 따라와 커서가 제목줄의 같은 자리에서 밀려 났다 (hyprbars 막대와 같게)
+    g_pLayoutManager->getCurrentLayout()->sekaiSetDragAnchor(sekaiPressXY);
     g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapstart", std::format("{:x}", (uintptr_t)w.get())});
 }
 
@@ -770,6 +774,8 @@ void CInputManager::onMouseButton(IPointer::SButtonEvent e) {
                 g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", "none,,0"});
             }
         }
+        if (m_currentlyHeldButtons.empty())
+            sekaiPressXY = getMouseCoordsInternal(); // SEKAI_CLIENT_MOVE3
         m_currentlyHeldButtons.push_back(e.button);
     } else {
         if (std::ranges::find_if(m_currentlyHeldButtons, [&](const auto& other) { return other == e.button; }) == m_currentlyHeldButtons.end())

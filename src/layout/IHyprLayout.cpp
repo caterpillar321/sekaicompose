@@ -250,6 +250,14 @@ void IHyprLayout::onBeginDragWindow() {
         return;
     }
 
+    // SEKAI_DRAG_CANCEL: 끌기 전 상태를 적어 둔다 (Esc 로 되돌릴 자리)
+    m_sekaiCancelPos     = DRAGGINGWINDOW->m_realPosition->goal();
+    m_sekaiCancelSize    = DRAGGINGWINDOW->m_realSize->goal();
+    m_sekaiCancelFS      = DRAGGINGWINDOW->isFullscreen();
+    m_sekaiCancelFloatPos  = DRAGGINGWINDOW->m_lastFloatingPosition;
+    m_sekaiCancelFloatSize = DRAGGINGWINDOW->m_lastFloatingSize;
+    m_sekaiDragCancelled = false;
+
     // Try to pick up dragged window now if drag_threshold is disabled
     // or at least update dragging related variables for the cursors
     g_pInputManager->m_dragThresholdReached = *PDRAGTHRESHOLD <= 0;
@@ -353,10 +361,44 @@ void IHyprLayout::sekaiSetDragAnchor(const Vector2D& pos) {
     m_lastDragXY  = pos;
 }
 
+bool IHyprLayout::sekaiCancelDrag() {
+    const auto W = g_pInputManager->m_currentlyDraggedWindow.lock();
+    if (!validMapped(W) || g_pInputManager->m_dragMode == MBIND_INVALID)
+        return false;
+    m_sekaiCancelling = true;
+    g_pKeybindManager->changeMouseBindMode(MBIND_INVALID); // → onEndDragWindow 가 되돌린다
+    m_sekaiCancelling    = false;
+    m_sekaiDragCancelled = true;
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", "none,,0"}); // 셸의 스냅 미리보기를 닫는다
+    Debug::log(LOG, "[sekai] 끌기 취소(Esc): {} → {} {}", W, m_sekaiCancelPos, m_sekaiCancelSize);
+    return true;
+}
+
 void IHyprLayout::onEndDragWindow() {
     const auto DRAGGINGWINDOW = g_pInputManager->m_currentlyDraggedWindow.lock();
 
     m_mouseMoveEventCount = 1;
+
+    if (m_sekaiCancelling && validMapped(DRAGGINGWINDOW)) { // SEKAI_DRAG_CANCEL: 처음 상태로
+        g_pInputManager->unsetCursorImage();
+        g_pInputManager->m_currentlyDraggedWindow.reset();
+        g_pInputManager->m_wasDraggingWindow = true;
+        if (m_sekaiCancelFS) {
+            if (!DRAGGINGWINDOW->isFullscreen())
+                g_pCompositor->setWindowFullscreenInternal(DRAGGINGWINDOW, FSMODE_MAXIMIZED);
+            // 다시 최대화하면 지금(끌던) 자리가 "복원할 자리"로 적힌다 — 최대화하기 전 자리로 되돌린다
+            DRAGGINGWINDOW->m_lastFloatingPosition = m_sekaiCancelFloatPos;
+            DRAGGINGWINDOW->m_lastFloatingSize     = m_sekaiCancelFloatSize;
+        } else if (!DRAGGINGWINDOW->isFullscreen()) {
+            *DRAGGINGWINDOW->m_realPosition = m_sekaiCancelPos;
+            *DRAGGINGWINDOW->m_realSize     = m_sekaiCancelSize;
+            DRAGGINGWINDOW->m_position      = m_sekaiCancelPos;
+            DRAGGINGWINDOW->m_size          = m_sekaiCancelSize;
+            DRAGGINGWINDOW->sendWindowSize();
+        }
+        g_pHyprRenderer->damageWindow(DRAGGINGWINDOW);
+        return;
+    }
 
     if (!validMapped(DRAGGINGWINDOW)) {
         if (DRAGGINGWINDOW) {

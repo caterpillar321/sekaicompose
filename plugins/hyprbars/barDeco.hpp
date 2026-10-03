@@ -108,6 +108,7 @@ class CHyprBar : public IHyprWindowDecoration {
     bool                 m_bTouchEv       = false;
     bool                 m_bDragPending   = false;
     bool                 m_bCancelledDown = false;
+    bool                 m_bSekaiRightEaten = false; // SEKAI_WINDOW_MENU: 막대에서 누른 오른쪽 단추 — 뗌도 앱에 주지 않는다
     int                  m_iSekaiArmed    = -1; // SEKAI_BUTTON_RELEASE: 누른 단추 — 같은 단추 위에서 떼야 실행
     Vector2D             m_sekaiPressXY;        // SEKAI_DRAG_ANCHOR: 제목줄을 누른 자리 (전역 좌표)
 

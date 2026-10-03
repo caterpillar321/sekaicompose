@@ -31,6 +31,7 @@
 #include "../managers/HookSystemManager.hpp"
 #include "../managers/EventManager.hpp"
 #include "../managers/input/InputManager.hpp"
+#include "../protocols/XDGDialog.hpp"
 
 #include <hyprutils/string/String.hpp>
 
@@ -1753,6 +1754,22 @@ bool CWindow::sekaiClientDecoration() {
     if (m_xdgSurface->m_toplevel->m_sekaiClientDeco)
         return true;
     return PROTO::serverDecorationKDE && m_wlSurface && m_wlSurface->resource() && PROTO::serverDecorationKDE->sekaiWantsClient(m_wlSurface->resource());
+}
+
+// SEKAI_MODAL: 이 창의 모달 대화상자(xdg-dialog 의 modal) — 떠 있으면 부모를 누를 때 그리로 초점을 옮긴다 (윈도우처럼)
+PHLWINDOW CWindow::sekaiModalChild() {
+    for (auto const& c : g_pCompositor->m_windows) {
+        if (!c->m_isMapped || c->isHidden() || c->m_isX11 || !c->m_xdgSurface || !c->m_xdgSurface->m_toplevel)
+            continue;
+        if (c->parent() != m_self.lock())
+            continue;
+        const auto D = c->m_xdgSurface->m_toplevel->m_dialog.lock();
+        if (!D || !D->modal)
+            continue;
+        const auto DEEPER = c->sekaiModalChild();
+        return DEEPER ? DEEPER : c;
+    }
+    return nullptr;
 }
 
 Vector2D CWindow::requestedMaxSize() {

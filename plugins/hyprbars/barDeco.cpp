@@ -70,6 +70,10 @@ static void sekaiSnapDrop(PHLWINDOW w) {
     g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", std::format("{},{},{:x}", z, mon ? mon->m_name : "", (uintptr_t)w.get())});
 }
 
+static bool sekaiCancelled() { // SEKAI_DRAG_CANCEL: 이번 끌기를 Esc 로 취소했다 (합성기가 이미 되돌렸다)
+    return g_pLayoutManager->getCurrentLayout() && g_pLayoutManager->getCurrentLayout()->sekaiDragCancelled();
+}
+
 static void sekaiSnapCancel() { // SEKAI_SNAP_GONE: 끄던 창이 없어졌다 — 셸이 끌기를 끝내게
     sekaiZone = "none";
     g_pEventManager->postEvent(SHyprIPCEvent{"sekaisnapdrop", "none,,0"});
@@ -207,6 +211,34 @@ void CHyprBar::onMouseButton(SCallbackInfo& info, IPointer::SButtonEvent e) {
     if (!inputIsValid())
         return;
 
+    // SEKAI_MODAL: 모달 대화상자가 떠 있는 창의 막대는 아무것도 하지 않는다 — 합성기가 대화상자를 앞으로 (윈도우처럼)
+    if (e.state == WL_POINTER_BUTTON_STATE_PRESSED)
+        if (const auto SEKAI_PW = m_pWindow.lock(); SEKAI_PW && SEKAI_PW->sekaiModalChild())
+            return;
+
+    // SEKAI_WINDOW_MENU: 막대를 오른쪽 클릭 → 셸(패널)이 윈도우식 창 메뉴를 띄운다 (단추 위는 아무것도 안 함).
+    //   inputIsValid 는 커서가 막대 위인지 보지 않는다 — 막대 밖(창 본문)의 오른쪽 클릭은 앱 몫이니 꼭 막대 안에서만
+    if (e.button == 0x111 /* BTN_RIGHT */) {
+        static auto* const PSEKAIH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprbars:bar_height")->getDataStaticPtr();
+        if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+            const auto RC = cursorRelativeToBar();
+            if (!m_hidden && VECINRECT(RC, 0, 0, assignedBoxGlobal().w, **PSEKAIH - 1)) {
+                if (sekaiButtonAt(RC) < 0) {
+                    const auto C = g_pInputManager->getMouseCoordsInternal();
+                    g_pEventManager->postEvent(
+                        SHyprIPCEvent{"sekaiwinmenu", std::format("{:x},{},{}", (uintptr_t)m_pWindow.lock().get(), (int)C.x, (int)C.y)});
+                }
+                m_bSekaiRightEaten = true;
+                info.cancelled     = true;
+                return;
+            }
+        } else if (m_bSekaiRightEaten) {
+            m_bSekaiRightEaten = false;
+            info.cancelled     = true;
+            return;
+        }
+    }
+
     if (e.state != WL_POINTER_BUTTON_STATE_PRESSED) {
         handleUpEvent(info);
         return;
@@ -247,7 +279,7 @@ void CHyprBar::onMouseMove(Vector2D coords) {
     (void)PICONONHOVER;
     damageOnButtonHover(); // SEKAI_BUTTON_HOVER — 배경 효과를 위해 언제나
 
-    if (m_bDraggingThis && !m_bTouchEv) // SEKAI_SNAP
+    if (m_bDraggingThis && !m_bTouchEv && !sekaiCancelled()) // SEKAI_SNAP (Esc 로 취소했으면 미리보기도 없다)
         sekaiSnapTrack();
 
     if (!m_bDragPending || m_bTouchEv || !validMapped(m_pWindow))
@@ -386,7 +418,8 @@ void CHyprBar::handleUpEvent(SCallbackInfo& info) {
     if (m_bDraggingThis) {
         g_pKeybindManager->m_dispatchers["mouse"]("0movewindow");
         m_bDraggingThis = false;
-        sekaiSnapDrop(m_pWindow.lock()); // SEKAI_SNAP
+        if (!sekaiCancelled())
+            sekaiSnapDrop(m_pWindow.lock()); // SEKAI_SNAP
 
         Debug::log(LOG, "[hyprbars] Dragging ended on {:x}", (uintptr_t)m_pWindow.lock().get());
     }

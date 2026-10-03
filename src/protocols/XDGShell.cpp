@@ -5,6 +5,7 @@ void sekaiClientMoveStart(PHLWINDOW w); // SEKAI_CLIENT_MOVE (InputManager.cpp)
 #include "../Compositor.hpp"
 #include "../managers/SeatManager.hpp"
 #include "../managers/ANRManager.hpp"
+#include "../managers/EventManager.hpp"
 #include "../helpers/Monitor.hpp"
 #include "core/Seat.hpp"
 #include "core/Compositor.hpp"
@@ -154,6 +155,9 @@ CXDGToplevelResource::CXDGToplevelResource(SP<CXdgToplevel> resource_, SP<CXDGSu
         // SEKAI_MINIMIZE: 최소화도 한다 (setSetMinimized) — 알리지 않으면 GTK4·libadwaita 가 최소화 단추를 꺼 둔다
         p      = (uint32_t*)wl_array_add(&arr, sizeof(uint32_t));
         *p     = XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE;
+        // SEKAI_WINDOW_MENU: 창 메뉴도 (앱이 그린 제목줄을 오른쪽 클릭 → show_window_menu → 셸이 메뉴를 띄운다)
+        p      = (uint32_t*)wl_array_add(&arr, sizeof(uint32_t));
+        *p     = XDG_TOPLEVEL_WM_CAPABILITIES_WINDOW_MENU;
         m_resource->sendWmCapabilities(&arr);
         wl_array_release(&arr);
     }
@@ -177,6 +181,14 @@ CXDGToplevelResource::CXDGToplevelResource(SP<CXdgToplevel> resource_, SP<CXDGSu
 
     // SEKAI_CLIENT_MOVE: 창이 그린 제목줄을 끌면 옮긴다
     m_resource->setMove([this](CXdgToplevel* r, wl_resource* seat, uint32_t serial) { sekaiClientMoveStart(m_window.lock()); });
+    // SEKAI_WINDOW_MENU: 앱이 그린 제목줄의 오른쪽 클릭 — 셸(패널)이 윈도우식 창 메뉴를 띄운다
+    m_resource->setShowWindowMenu([this](CXdgToplevel* r, wl_resource* seat, uint32_t serial, int32_t x, int32_t y) {
+        const auto W = m_window.lock();
+        if (!W || !W->m_isMapped)
+            return;
+        const auto P = W->m_realPosition->goal() + Vector2D{x, y};
+        g_pEventManager->postEvent(SHyprIPCEvent{"sekaiwinmenu", std::format("{:x},{},{}", (uintptr_t)W.get(), (int)P.x, (int)P.y)});
+    });
 
     m_resource->setSetMaxSize([this](CXdgToplevel* r, int32_t x, int32_t y) {
         m_pending.maxSize = {x, y};

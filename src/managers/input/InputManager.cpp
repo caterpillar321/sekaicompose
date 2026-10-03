@@ -916,6 +916,21 @@ void CInputManager::processMouseDownNormal(const IPointer::SButtonEvent& e) {
     const auto mouseCoords = g_pInputManager->getMouseCoordsInternal();
     const auto w           = g_pCompositor->vectorToWindowUnified(mouseCoords, ALLOW_FLOATING | RESERVED_EXTENTS | INPUT_EXTENTS);
 
+    // SEKAI_MODAL: 모달 대화상자가 떠 있는 창을 누르면 그 누름은 앱에 주지 않고 대화상자를 앞으로 (윈도우처럼)
+    static uint32_t sekaiModalEaten = 0;
+    if (e.state == WL_POINTER_BUTTON_STATE_RELEASED && sekaiModalEaten == e.button) {
+        sekaiModalEaten = 0;
+        return;
+    }
+    if (e.state == WL_POINTER_BUTTON_STATE_PRESSED && w && !g_pSessionLockManager->isSessionLocked() && !m_lastFocusOnLS) {
+        if (const auto MODAL = w->sekaiModalChild(); MODAL) {
+            g_pCompositor->focusWindow(MODAL);
+            g_pCompositor->changeWindowZOrder(MODAL, true);
+            sekaiModalEaten = e.button;
+            return;
+        }
+    }
+
     // SEKAI_BORDER_GRAB: 테두리를 누르면 크기 조절 — 제목줄 맨 위도 위쪽 가장자리라 제목줄보다 먼저 본다
     if (*PRESIZEONBORDER && w && !w->isFullscreen() && !w->isX11OverrideRedirect() && !g_pSessionLockManager->isSessionLocked() && !m_lastFocusOnLS &&
         e.state == WL_POINTER_BUTTON_STATE_PRESSED && !w->hasPopupAt(mouseCoords) && (g_pSeatManager->m_mouse.expired() || !isConstrained()) /* SEKAI_BORDER_FIX */) {
@@ -1594,6 +1609,24 @@ void CInputManager::onKeyboardKey(const IKeyboard::SKeyEvent& event, SP<IKeyboar
         return;
 
     const bool DISALLOWACTION = pKeyboard->isVirtual() && shouldIgnoreVirtualKeyboard(pKeyboard);
+
+    // SEKAI_DRAG_CANCEL: 창을 끌거나 크기를 바꾸는 중 Esc — 처음대로 되돌린다 (윈도우처럼). 그 Esc 는 앱에 주지 않는다
+    static bool sekaiEatEscUp = false;
+    if (event.keycode == 1 /* KEY_ESC */) {
+        if (event.state == WL_KEYBOARD_KEY_STATE_PRESSED && !m_currentlyDraggedWindow.expired() && g_pLayoutManager->getCurrentLayout() &&
+            g_pLayoutManager->getCurrentLayout()->sekaiCancelDrag()) {
+            if (sekaiMoving) {
+                sekaiMoving   = false;
+                sekaiMoveZone = "none";
+            }
+            sekaiEatEscUp = true;
+            return;
+        }
+        if (event.state == WL_KEYBOARD_KEY_STATE_RELEASED && sekaiEatEscUp) {
+            sekaiEatEscUp = false;
+            return;
+        }
+    }
 
     const auto EMAP = std::unordered_map<std::string, std::any>{{"keyboard", pKeyboard}, {"event", event}};
     EMIT_HOOK_EVENT_CANCELLABLE("keyPress", EMAP);

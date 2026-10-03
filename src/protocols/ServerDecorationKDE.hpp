@@ -28,6 +28,7 @@ class CServerDecorationKDEProtocol : public IWaylandProtocol {
     virtual void bindManager(wl_client* client, void* data, uint32_t ver, uint32_t id);
 
     bool         sekaiWantsClient(SP<CWLSurfaceResource> surf); // SEKAI_CLIENT_DECO
+    bool         sekaiHas(SP<CWLSurfaceResource> surf);         // SEKAI_GEOM_CSD: 이 표면이 장식 객체를 만들었다
 
   private:
     void onManagerResourceDestroy(wl_resource* res);

@@ -1737,9 +1737,17 @@ bool CWindow::sekaiFixedSize() {
 }
 
 // SEKAI_CLIENT_DECO: xdg-decoration 이나 KDE server-decoration 으로 client(제목줄을 앱이 그림)를 요청한 창
+// SEKAI_GEOM_CSD: 장식 규약을 하나도 쓰지 않는 창(GTK4·libadwaita — Wayland 에선 서버 장식이 없어 늘 제목줄을 스스로
+//   그리면서 그렇다고 알리지 않는다)은 창 영역이 그림자 자리만큼 안쪽에서 시작했는지로 본다. 대화상자도 같다 (GTK4 대화상자는
+//   헤더바를 스스로 그린다). 최대화하면 GTK 가 그림자를 없애 시작점이 0 이 되므로 한 번 본 것을 기억한다
 bool CWindow::sekaiClientDecoration() {
     if (m_isX11 || !m_xdgSurface || !m_xdgSurface->m_toplevel)
         return false;
+    const auto TL      = m_xdgSurface->m_toplevel;
+    const bool XDGDECO = TL->m_sekaiHasXDGDeco;
+    const bool KDEDECO = PROTO::serverDecorationKDE && m_wlSurface && m_wlSurface->resource() && PROTO::serverDecorationKDE->sekaiHas(m_wlSurface->resource());
+    if (!XDGDECO && !KDEDECO)
+        return TL->m_sekaiGeomCSD;
     if (parent())
         return false; // 대화상자는 원래대로 닫기 단추만 있는 막대를 둔다 (GTK 확인 창도 client 를 고른다 — × 가 사라지지 않게)
     if (m_xdgSurface->m_toplevel->m_sekaiClientDeco)

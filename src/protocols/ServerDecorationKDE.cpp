@@ -1,4 +1,5 @@
 #include "ServerDecorationKDE.hpp"
+#include <algorithm>
 #include "core/Compositor.hpp"
 #include "../Compositor.hpp"
 #include "../desktop/Window.hpp"
@@ -33,6 +34,10 @@ bool CServerDecorationKDEProtocol::sekaiWantsClient(SP<CWLSurfaceResource> surf)
             return d->m_sekaiClient;
     }
     return false;
+}
+
+bool CServerDecorationKDEProtocol::sekaiHas(SP<CWLSurfaceResource> surf) {
+    return std::ranges::any_of(m_decos, [&](const auto& d) { return d->m_surface.lock() == surf; });
 }
 
 bool CServerDecorationKDE::good() {

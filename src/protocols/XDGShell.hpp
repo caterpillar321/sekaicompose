@@ -98,6 +98,10 @@ class CXDGToplevelResource {
 
     // SEKAI_CLIENT_DECO: 앱이 xdg-decoration 으로 "제목줄은 내가 그린다"(client-side)를 요청했다
     bool                            m_sekaiClientDeco = false;
+    // SEKAI_GEOM_CSD: 창 영역(set_window_geometry)이 버퍼 안쪽에서 시작한 적이 있다 — 그림자를 스스로 그리는 창 (한 번 켜지면 둔다)
+    bool                            m_sekaiGeomCSD = false;
+    // SEKAI_GEOM_CSD: xdg-decoration 객체를 만든 창 (장식 규약을 쓰는 앱 — 창 영역으로 판단하지 않는다)
+    bool                            m_sekaiHasXDGDeco = false;
 
     bool                            good();
 

@@ -20,6 +20,9 @@ CXDGDecoration::CXDGDecoration(SP<CZxdgToplevelDecorationV1> resource_, wl_resou
     if UNLIKELY (!m_resource->resource())
         return;
 
+    if (const auto TL = CXDGToplevelResource::fromResource(toplevel); TL)
+        TL->m_sekaiHasXDGDeco = true; // SEKAI_GEOM_CSD
+
     m_resource->setDestroy([this](CZxdgToplevelDecorationV1* pMgr) { PROTO::xdgDecoration->destroyDecoration(this); });
     m_resource->setOnDestroy([this](CZxdgToplevelDecorationV1* pMgr) { PROTO::xdgDecoration->destroyDecoration(this); });
 

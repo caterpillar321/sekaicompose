@@ -898,6 +898,19 @@ void Events::listener_unmapWindow(void* owner, void* data) {
 void Events::listener_commitWindow(void* owner, void* data) {
     PHLWINDOW PWINDOW = ((CWindow*)owner)->m_self.lock();
 
+    // SEKAI_GEOM_CSD: 창 영역이 처음으로 버퍼 안쪽에서 시작했다 (그림자를 스스로 그리는 창) — 표시해 두고, 장식 규약을
+    //   안 쓰는 창이라 이것으로 "제목줄을 앱이 그림"이 되면 막대를 다시 정한다 (CWindow::sekaiClientDecoration)
+    if (!PWINDOW->m_isX11 && PWINDOW->m_xdgSurface && PWINDOW->m_xdgSurface->m_toplevel && !PWINDOW->m_xdgSurface->m_toplevel->m_sekaiGeomCSD) {
+        const auto& G = PWINDOW->m_xdgSurface->m_current.geometry;
+        if (G.x > 0 || G.y > 0) {
+            PWINDOW->m_xdgSurface->m_toplevel->m_sekaiGeomCSD = true;
+            if (PWINDOW->m_isMapped && PWINDOW->sekaiClientDecoration()) {
+                Debug::log(LOG, "[SEKAI_GEOM_CSD] {} draws its own titlebar (geometry starts at {}, {})", PWINDOW, G.x, G.y);
+                PWINDOW->updateDynamicRules();
+            }
+        }
+    }
+
     if (!PWINDOW->m_isX11 && PWINDOW->m_xdgSurface->m_initialCommit) {
         Vector2D predSize = g_pLayoutManager->getCurrentLayout()->predictSizeForNewWindow(PWINDOW);
 

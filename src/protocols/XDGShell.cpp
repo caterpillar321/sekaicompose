@@ -151,6 +151,9 @@ CXDGToplevelResource::CXDGToplevelResource(SP<CXdgToplevel> resource_, SP<CXDGSu
         *p     = XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN;
         p      = (uint32_t*)wl_array_add(&arr, sizeof(uint32_t));
         *p     = XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE;
+        // SEKAI_MINIMIZE: 최소화도 한다 (setSetMinimized) — 알리지 않으면 GTK4·libadwaita 가 최소화 단추를 꺼 둔다
+        p      = (uint32_t*)wl_array_add(&arr, sizeof(uint32_t));
+        *p     = XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE;
         m_resource->sendWmCapabilities(&arr);
         wl_array_release(&arr);
     }

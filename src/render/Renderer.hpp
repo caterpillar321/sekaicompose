@@ -115,6 +115,8 @@ class CHyprRenderer {
 
     CRenderPass m_renderPass = {};
 
+    bool        sekaiCursorHidden() const { return m_cursorHidden; } // SEKAI_CURSOR_REFRESH
+
   private:
     void arrangeLayerArray(PHLMONITOR, const std::vector<PHLLSREF>&, bool, CBox*);
     void renderWorkspace(PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry);

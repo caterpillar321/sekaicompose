@@ -1251,6 +1251,11 @@ static std::string dispatchSetCursor(eHyprCtlOutputFormat format, std::string re
     if (!g_pCursorManager->changeTheme(theme, size))
         return "failed to set cursor";
 
+    // SEKAI_CURSOR_REFRESH: 지금 보이는 커서(앱이 모양 이름으로 부른 것)를 새 테마·크기로 바로 그린다 —
+    //   안 하면 모양이 바뀔 때까지(글자 칸 위로 가는 등) 옛 그림이 남았다 (설정 › 접근성의 커서 색·크기)
+    if (!g_pHyprRenderer->m_lastCursorData.surf.has_value() && !g_pHyprRenderer->m_lastCursorData.name.empty() && !g_pHyprRenderer->sekaiCursorHidden())
+        g_pCursorManager->setCursorFromName(g_pHyprRenderer->m_lastCursorData.name);
+
     return "ok";
 }
 

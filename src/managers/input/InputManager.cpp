@@ -157,6 +157,8 @@ void sekaiClientMoveStart(PHLWINDOW w) {
 #include "../../helpers/time/Time.hpp"
 
 #include <aquamarine/input/Input.hpp>
+#include <unordered_set>
+#include "../eventLoop/EventLoopManager.hpp"
 
 // SEKAI_LAYER_REFOCUS: 보이는 작업 공간에 마지막으로 초점을 가졌던 창이 있나
 static bool sekaiLastWindowShown() {
@@ -1604,6 +1606,50 @@ void CInputManager::updateKeyboardsLeds(SP<IKeyboard> pKeyboard) {
     }
 }
 
+// ── SEKAI_A11Y_KEYS: 고정 키 · 필터 키 (윈도우의 접근성 › 키보드) ─────────────────────
+//   고정 키: 수식 키를 혼자 눌렀다 떼면 다음 키 하나에 걸린다(래치), 한 번 더 누르면 계속(잠금), 또 누르면 풀린다.
+//     걸린 수식 키는 accumulateModsFromAllKBs 에 더해진다 — 앱(wl_keyboard.modifiers)과 단축키(Win 다음 E) 모두
+//   필터 키: 반복 입력 무시(같은 키를 N ms 안에 다시 누르면 버림) · 누르고 있어야 입력(N ms 눌러야 들어감)
+//   Shift 다섯 번 · 오른쪽 Shift 8초 → IPC sekaia11y>>sticky|filter — 셸이 켤지 묻는다
+//   가상 키보드(화상 키보드)는 빼고 진짜 키보드만
+static uint32_t                                     g_sekaiStickyLatched = 0, g_sekaiStickyLocked = 0;
+static uint32_t                                     g_sekaiStickyDown    = 0;
+static bool                                         g_sekaiStickyUsed    = false; // 수식 키를 누른 채 다른 키 — 그때는 걸지 않는다
+static int                                          g_sekaiShiftTaps     = 0;
+static Time::steady_tp                              g_sekaiShiftTapAt, g_sekaiRShiftAt;
+static bool                                         g_sekaiRShiftDown = false;
+static std::unordered_map<uint32_t, Time::steady_tp> g_sekaiLastUp;   // 반복 입력 무시 — 키마다 마지막으로 뗀 때
+static std::unordered_set<uint32_t>                 g_sekaiDropped;  // 버린 누름 — 그 뗌도 버린다
+struct SSekaiSlowKey {
+    IKeyboard::SKeyEvent ev;
+    WP<IKeyboard>        kb;
+};
+static std::optional<SSekaiSlowKey> g_sekaiSlow;
+static SP<CEventLoopTimer>          g_sekaiSlowTimer;
+static bool                         g_sekaiSlowPass = false;
+
+static uint32_t sekaiModOf(SP<IKeyboard> kb, uint32_t keycode) {
+    if (!kb || !kb->m_xkbState)
+        return 0;
+    switch (xkb_state_key_get_one_sym(kb->m_xkbState, keycode + 8)) {
+        case XKB_KEY_Shift_L:
+        case XKB_KEY_Shift_R: return HL_MODIFIER_SHIFT;
+        case XKB_KEY_Control_L:
+        case XKB_KEY_Control_R: return HL_MODIFIER_CTRL;
+        case XKB_KEY_Alt_L:
+        case XKB_KEY_Alt_R:
+        case XKB_KEY_Meta_L:
+        case XKB_KEY_Meta_R: return HL_MODIFIER_ALT;
+        case XKB_KEY_Super_L:
+        case XKB_KEY_Super_R: return HL_MODIFIER_META;
+        default: return 0;   // 한/영(ralt_hangul)·한자 키는 수식 키가 아니다
+    }
+}
+
+static void sekaiStickyPost() {
+    g_pEventManager->postEvent(SHyprIPCEvent{"sekaisticky", std::format("{},{}", g_sekaiStickyLatched, g_sekaiStickyLocked)});
+}
+
 void CInputManager::onKeyboardKey(const IKeyboard::SKeyEvent& event, SP<IKeyboard> pKeyboard) {
     if (!pKeyboard->m_enabled || !pKeyboard->m_allowed)
         return;
@@ -1628,6 +1674,107 @@ void CInputManager::onKeyboardKey(const IKeyboard::SKeyEvent& event, SP<IKeyboar
         }
     }
 
+    // SEKAI_A11Y_KEYS
+    static auto PSTICKY   = CConfigValue<Hyprlang::INT>("input:sekai_sticky_keys");
+    static auto PBOUNCE   = CConfigValue<Hyprlang::INT>("input:sekai_bounce_keys");
+    static auto PSLOW     = CConfigValue<Hyprlang::INT>("input:sekai_slow_keys");
+    static auto PA11YKEYS = CConfigValue<Hyprlang::INT>("input:sekai_a11y_shortcuts");
+    bool        sekaiClearLatch = false;
+    if (!pKeyboard->isVirtual()) {
+        const bool     PRESSED = event.state == WL_KEYBOARD_KEY_STATE_PRESSED;
+        const uint32_t MOD     = sekaiModOf(pKeyboard, event.keycode);
+        const auto     NOW     = Time::steadyNow();
+        if (*PA11YKEYS && !g_sekaiSlowPass) {
+            if (MOD == HL_MODIFIER_SHIFT && PRESSED) {
+                if (NOW - g_sekaiShiftTapAt > std::chrono::seconds(2))
+                    g_sekaiShiftTaps = 0;
+                g_sekaiShiftTapAt = NOW;
+                if (++g_sekaiShiftTaps >= 5) {
+                    g_sekaiShiftTaps = 0;
+                    g_pEventManager->postEvent(SHyprIPCEvent{"sekaia11y", "sticky"});
+                }
+            } else if (PRESSED && MOD != HL_MODIFIER_SHIFT)
+                g_sekaiShiftTaps = 0;
+            if (event.keycode == 54 /* KEY_RIGHTSHIFT */) {
+                if (PRESSED && !g_sekaiRShiftDown) {
+                    g_sekaiRShiftDown = true;
+                    g_sekaiRShiftAt   = NOW;
+                } else if (!PRESSED && g_sekaiRShiftDown) {
+                    g_sekaiRShiftDown = false;
+                    if (NOW - g_sekaiRShiftAt >= std::chrono::seconds(8))
+                        g_pEventManager->postEvent(SHyprIPCEvent{"sekaia11y", "filter"});
+                }
+            }
+        }
+        // 반복 입력 무시 — 같은 키를 방금 뗐는데 또 누르면 (손떨림) 버린다
+        if (*PBOUNCE > 0 && !MOD && !g_sekaiSlowPass) {
+            if (PRESSED) {
+                const auto IT = g_sekaiLastUp.find(event.keycode);
+                if (IT != g_sekaiLastUp.end() && NOW - IT->second < std::chrono::milliseconds(*PBOUNCE)) {
+                    g_sekaiDropped.insert(event.keycode);
+                    return;
+                }
+            } else {
+                if (g_sekaiDropped.erase(event.keycode))
+                    return;
+                g_sekaiLastUp[event.keycode] = NOW;
+            }
+        }
+        // 누르고 있어야 입력 — N ms 동안 눌려 있어야 그 누름을 넘긴다. 그 전에 떼면 둘 다 버린다
+        if (*PSLOW > 0 && !MOD && !g_sekaiSlowPass) {
+            if (PRESSED) {
+                if (!g_sekaiSlowTimer) {
+                    g_sekaiSlowTimer = makeShared<CEventLoopTimer>(
+                        std::nullopt,
+                        [](SP<CEventLoopTimer> self, void* data) {
+                            if (!g_sekaiSlow)
+                                return;
+                            const auto S = *g_sekaiSlow;
+                            g_sekaiSlow.reset();
+                            if (const auto KB = S.kb.lock(); KB) {
+                                g_sekaiSlowPass = true;
+                                g_pInputManager->onKeyboardKey(S.ev, KB);
+                                g_sekaiSlowPass = false;
+                            }
+                        },
+                        nullptr);
+                    g_pEventLoopManager->addTimer(g_sekaiSlowTimer);
+                }
+                g_sekaiSlow = SSekaiSlowKey{event, pKeyboard};
+                g_sekaiSlowTimer->updateTimeout(std::chrono::milliseconds(*PSLOW));
+                return;
+            } else if (g_sekaiSlow && g_sekaiSlow->ev.keycode == event.keycode) {
+                g_sekaiSlow.reset();
+                g_sekaiSlowTimer->updateTimeout(std::nullopt);
+                return;
+            }
+        }
+        if (*PSTICKY) {
+            if (MOD) {
+                if (PRESSED) {
+                    if (!g_sekaiStickyDown)
+                        g_sekaiStickyUsed = false;
+                    g_sekaiStickyDown |= MOD;
+                } else {
+                    g_sekaiStickyDown &= ~MOD;
+                    if (!g_sekaiStickyUsed) {
+                        if (g_sekaiStickyLocked & MOD)
+                            g_sekaiStickyLocked &= ~MOD;
+                        else if (g_sekaiStickyLatched & MOD) {
+                            g_sekaiStickyLatched &= ~MOD;
+                            g_sekaiStickyLocked |= MOD;
+                        } else
+                            g_sekaiStickyLatched |= MOD;
+                        sekaiStickyPost(); // 앱에 보낼 수식 키는 뒤따르는 onKeyboardMod 가 (걸린 것을 더해) 보낸다
+                    }
+                }
+            } else if (PRESSED) {
+                g_sekaiStickyUsed = true;
+                sekaiClearLatch   = g_sekaiStickyLatched != 0; // 이 키를 넘긴 뒤 래치를 푼다
+            }
+        }
+    }
+
     const auto EMAP = std::unordered_map<std::string, std::any>{{"keyboard", pKeyboard}, {"event", event}};
     EMIT_HOOK_EVENT_CANCELLABLE("keyPress", EMAP);
 
@@ -1645,6 +1792,12 @@ void CInputManager::onKeyboardKey(const IKeyboard::SKeyEvent& event, SP<IKeyboar
         }
 
         updateKeyboardsLeds(pKeyboard);
+    }
+
+    if (sekaiClearLatch) { // SEKAI_A11Y_KEYS: 래치는 키 하나에만 — 풀고 수식 키를 다시 보낸다
+        g_sekaiStickyLatched = 0;
+        onKeyboardMod(pKeyboard);
+        sekaiStickyPost();
     }
 }
 
@@ -1806,6 +1959,15 @@ uint32_t CInputManager::accumulateModsFromAllKBs() {
             continue;
 
         finalMask |= kb->getModifiers();
+    }
+
+    // SEKAI_A11Y_KEYS: 고정 키로 걸린 수식 키 (끄면 풀린다)
+    static auto PSTICKY = CConfigValue<Hyprlang::INT>("input:sekai_sticky_keys");
+    if (*PSTICKY)
+        finalMask |= g_sekaiStickyLatched | g_sekaiStickyLocked;
+    else if (g_sekaiStickyLatched || g_sekaiStickyLocked) {
+        g_sekaiStickyLatched = g_sekaiStickyLocked = 0;
+        sekaiStickyPost();
     }
 
     return finalMask;

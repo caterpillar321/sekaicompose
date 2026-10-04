@@ -637,6 +637,11 @@ CConfigManager::CConfigManager() {
     registerConfigVar("input:repeat_delay", Hyprlang::INT{600});
     registerConfigVar("input:natural_scroll", Hyprlang::INT{0});
     registerConfigVar("input:numlock_by_default", Hyprlang::INT{0});
+    // SEKAI_A11Y_KEYS: 고정 키 · 필터 키(반복 입력 무시 ms · 누르고 있어야 입력 ms) · Shift 다섯 번/오른쪽 Shift 8초 알림
+    registerConfigVar("input:sekai_sticky_keys", Hyprlang::INT{0});
+    registerConfigVar("input:sekai_bounce_keys", Hyprlang::INT{0});
+    registerConfigVar("input:sekai_slow_keys", Hyprlang::INT{0});
+    registerConfigVar("input:sekai_a11y_shortcuts", Hyprlang::INT{1});
     registerConfigVar("input:resolve_binds_by_sym", Hyprlang::INT{0});
     registerConfigVar("input:force_no_accel", Hyprlang::INT{0});
     registerConfigVar("input:float_switch_override_focus", Hyprlang::INT{1});
